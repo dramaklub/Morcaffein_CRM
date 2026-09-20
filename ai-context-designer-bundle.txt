@@ -1,0 +1,116 @@
+MORCAFFEIN CRM — DESIGNER / STRUCTURAL UI BUNDLE (DELTA)
+Only the structural UI files touched since the previous bundle are listed here.
+Everything else is unchanged from the previous ai-context-designer-bundle.txt.
+
+This file is titled "designer" for historical reasons — it carries the structural
+(layout-level) UI sources, including code-built views that have no .Designer.cs of
+their own. TransactionView.cs is one of those: it builds its entire UI in code, no
+Designer file exists.
+
+Files changed this session:
+
+  ----- Transaction side (major rework) -----
+
+  - CRM_Morcaffein/Views/Controls/TransactionView.cs
+      Full rework. No .Designer.cs exists for this view; the file below IS the layout
+      source. Changes this session:
+        * Left customer column: Width 220 -> 260; Padding = 12 retained.
+        * Left column back-color: SurfaceCard retained (tint).
+        * Outer card (tableCardPanel): BorderStyle.FixedSingle REMOVED. It doubled up
+          with the Order box's own border on the right edge and read as a thick black
+          seam. Order / Payables / Log Sale boxes keep their own borders; the right
+          column's 10px padding insets them from the card edge.
+        * Promo control: was a Button + ContextMenuStrip; briefly became a ComboBox
+          + Format handler + PromoItem wrapper; now a SINGLE BUTTON at the bottom of
+          the left column. Its label shows the currently-applied promo ("Exam Week ▾")
+          or "Select a Promo ▾" when none is applied. Click opens the eligible-promo
+          menu; a "Clear applied promo" item appears at the top when something is
+          active. No ComboBox. No PromoItem. No _suppressPromoApply flag.
+        * Drinks header: category combo no longer overlaps the "Sort by Category:"
+          label. Positions computed via TextRenderer.MeasureText for the three
+          elements (Drinks, label, combo) instead of hardcoded x-offsets, so the
+          label can't collide with the combo at any font/DPI.
+        * Customer search row: textbox now BorderStyle.FixedSingle (kills the default
+          blue focus underline); row height 28; Go button same height as the textbox.
+        * Right column (BuildOrderColumn): Width 380; Padding = 10 all sides so all
+          three boxes (Order, Payables, Log Sale) are inset uniformly. This is what
+          fixed the "order list touching the outer border" complaint.
+        * Order box (BuildOrderBox): Margin = (0,0,0,10) — gap to Payables below.
+          Its own FixedSingle border retained.
+        * Payables box (BuildPayablesBox): Height 254; Padding (14,12,14,12); larger
+          fonts on captions (8.5f -> 9.5f) and values (9.5f -> 11f); Total value now
+          15f bold brand color, reads as the headline number.
+        * Log Sale box (BuildLogSaleBox) — replaces the old BuildLogSaleBar. Was a
+          tinted SurfaceCard "bar" whose padding let the tint show through around the
+          brand-colored button (read as an unintended background rectangle). Now a
+          third bordered box matching Order/Payables; the button fills it edge to
+          edge inside a uniform inner padding.
+        * RefreshCartLines(): line width now
+          Math.Max(200, _cartLinesPanel.ClientSize.Width - SystemInformation.
+          VerticalScrollBarWidth - 8) — reserves scrollbar width unconditionally
+          because the FlowLayoutPanel hasn't settled its final ClientSize on the
+          first pass.
+        * SelectCustomer(): search-and-Go now starts a FRESH TransactionViewModel /
+          Order instead of relinking the existing order via SwitchCustomer. If a cart
+          has items, confirms first ("Discard the in-progress order for X and start a
+          new one for Y?"); declining restores the search box text to the currently-
+          loaded customer's ID. SwitchCustomer remains on the VM but is no longer
+          called from the POS flow.
+        * ShowPromoMenu(): opens the eligible-promo menu above the button
+          (Point(0, -menu.PreferredSize.Height)) since the button is at the bottom
+          of the column — dropping downward would fall off the window.
+        * RefreshPromoCombo() replaced by RefreshPromoButton() — syncs the button's
+          label to the currently-applied promo, enables/disables based on whether
+          there's an active transaction. Called from RefreshSummary() (the funnel for
+          all cart-state changes) and from ShowPromoMenu after apply/clear.
+        * PromoItem record, _promoCombo field, _suppressPromoApply field all removed.
+
+  - CRM_Morcaffein/Views/Controls/CartLineControl.cs
+      Full rework of the Order box row layout. No .Designer.cs; layout is in code.
+        * Row is 44px tall, Margin (0,0,0,3).
+        * Left-to-right: name (fills, ellipsized single-line), price (76px right-
+          aligned ₱SubTotal), stepper cluster (94px: −, 1x, +), 10px gap, ✕ (28px).
+        * The name label is height-constrained to a single line so AutoEllipsis fires
+          instead of wrapping to two lines. (AutoEllipsis only elides when text would
+          be clipped on ONE line; a full-height label wraps first.)
+        * The stepper and ✕ live inside a shared rightCluster panel; the 10px gap
+          between them is real empty space inside that panel (not a Margin between
+          two docked siblings, which WinForms honors inconsistently).
+        * Children are absolutely positioned in LayoutChildren(), called from
+          OnResize AND OnHandleCreated. The OnResize override fires from the base
+          Panel constructor (via the Height assignment at the top of our own ctor)
+          BEFORE the child fields are assigned, so LayoutChildren() has a null-guard
+          that bails until all fields exist.
+        * Both stepper children (minusBtn, qtyLabel, plusBtn) carry
+          Margin = new Padding(0). FlowLayoutPanel's default 3px-per-side margin was
+          squeezing the trailing + button out of the 94px stepper, which is why the
+          + rendered as a thin sliver.
+        * The ✕ is a Label, not a Button — WinForms FlatStyle buttons enforce a
+          minimum width larger than 28px, which visually overlapped the + button.
+
+  ----- Feedback side -----
+
+  - CRM_Morcaffein/Views/Controls/FeedbackManagementView.Designer.cs
+      decisionPanel and its controls (decisionHeaderLabel, bonusPointsLabel,
+      bonusPointsNud, resolutionNotesTxtBx, resolveBtn, dismissBtn,
+      decisionStatusLabel) removed. drawerFlow now only contains
+      ticketCustomerLabel and reviewBoxPanel. Removed the
+      ((ISupportInitialize)bonusPointsNud).BeginInit/EndInit pair.
+
+  ----- Customers side (earlier in the session) -----
+
+  - CRM_Morcaffein/Views/Controls/CustomerManagementView.Designer.cs
+      Profile block (name / tier / points / contact) is now enclosed in a
+      FixedSingle-bordered profileBoxPanel — mirrors how the Feedback drawer boxes
+      its review content. The four labels that used to sit loose in drawerFlow are
+      now absolutely positioned inside profileBoxPanel with a 14px inset, and
+      profileBoxPanel itself is added to drawerFlow with Margin (0,0,0,16) before
+      the history/ledger/adjustment sections. The three sub-grids below remain
+      loose header+grid pairs, not individually boxed.
+
+No other Designer or structural-UI files were changed this session.
+
+The full current source of TransactionView.cs, CartLineControl.cs,
+FeedbackManagementView.Designer.cs, and CustomerManagementView.Designer.cs belongs
+in the next full regeneration of this bundle. Until then, the repo is the source of
+truth for all four.

@@ -1,0 +1,188 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<UseWindowsForms>true</UseWindowsForms>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<ApplicationIcon>Resources\Branding\fourtyeeight.ico</ApplicationIcon>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Remove="Resources\NewFolder\**" />
+		<EmbeddedResource Remove="Resources\NewFolder\**" />
+		<None Remove="Resources\NewFolder\**" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="Resources\Branding\fourtyeeight.ico" />
+		<None Remove="Resources\Branding\fourtyeight.png" />
+		<None Remove="Resources\Branding\sixteeen.ico" />
+		<None Remove="Resources\Branding\sixteen.png" />
+		<None Remove="Resources\Branding\Top Bar Icon.png" />
+		<None Remove="Resources\Branding\twofivesix.png" />
+		<None Remove="Resources\Icons\Approvals.png" />
+		<None Remove="Resources\Icons\Campaign.png" />
+		<None Remove="Resources\Icons\Cart.png" />
+		<None Remove="Resources\Icons\Customers.png" />
+		<None Remove="Resources\Icons\Dashboard.png" />
+		<None Remove="Resources\Icons\Feedback.png" />
+		<None Remove="Resources\Icons\User Mgmt.png" />
+		<None Remove="Resources\Products\americano.jpg" />
+		<None Remove="Resources\Products\brownsugar.jpg" />
+		<None Remove="Resources\Products\cappuccino.jpg" />
+		<None Remove="Resources\Products\caramelmac.jpg" />
+		<None Remove="Resources\Products\cocolatte.jpg" />
+		<None Remove="Resources\Products\espanyol.jpg" />
+		<None Remove="Resources\Products\espresso.jpg" />
+		<None Remove="Resources\Products\hazelnut.jpg" />
+		<None Remove="Resources\Products\honeymatchahc.jpg" />
+		<None Remove="Resources\Products\hotchoco.jpg" />
+		<None Remove="Resources\Products\matchahc.jpg" />
+		<None Remove="Resources\Products\mocha.jpg" />
+		<None Remove="Resources\Products\purematchahc.jpg" />
+		<None Remove="Resources\Products\scc.jpg" />
+		<None Remove="Resources\Products\ssmatchahc.jpg" />
+		<None Remove="Resources\Products\strawberrymatchahc.jpg" />
+		<None Remove="Resources\Products\ubeube.jpg" />
+		<None Remove="Resources\Products\vanillamatchahc.jpg" />
+		<None Remove="Resources\Products\vietnamese.jpg" />
+		<None Remove="Resources\Products\whitechoco.jpg" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Content Include="Resources\Branding\fourtyeeight.ico">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Branding\fourtyeight.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Branding\sixteeen.ico">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Branding\sixteen.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Branding\Top Bar Icon.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Branding\twofivesix.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\Approvals.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\Campaign.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\Cart.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\Customers.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\Dashboard.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\Feedback.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Icons\User Mgmt.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\americano.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\brownsugar.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\cappuccino.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\caramelmac.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\cocolatte.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\espanyol.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\espresso.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\hazelnut.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\honeymatchahc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\hotchoco.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\matchahc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\mocha.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\purematchahc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\scc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\ssmatchahc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\strawberrymatchahc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\ubeube.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\vanillamatchahc.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\vietnamese.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Resources\Products\whitechoco.jpg">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Compile Update="Properties\Resources.Designer.cs">
+			<DesignTime>True</DesignTime>
+			<AutoGen>True</AutoGen>
+			<DependentUpon>Resources.resx</DependentUpon>
+		</Compile>
+	</ItemGroup>
+
+	<ItemGroup>
+		<EmbeddedResource Update="Properties\Resources.resx">
+			<Generator>ResXFileCodeGenerator</Generator>
+			<LastGenOutput>Resources.Designer.cs</LastGenOutput>
+		</EmbeddedResource>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\CRM_Morcaffein.api\CRM_Morcaffein.api.csproj" />
+		<ProjectReference Include="..\CRM_Morcaffein.domain\CRM_Morcaffein.domain.csproj" />
+		<ProjectReference Include="..\CRM_Morcaffein.infrastructure\CRM_Morcaffein.infrastructure.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="Resources\Login Background.png">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="PDFsharp-MigraDoc" Version="6.2.4" />
+		<PackageReference Include="WinForms.DataVisualization" Version="1.10.2" />
+	</ItemGroup>
+
+</Project>

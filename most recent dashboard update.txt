@@ -1,0 +1,221 @@
+MORCAFFEIN CRM — MOST RECENT DASHBOARD UPDATE (Manager + Admin, complete state)
+Written 2026-09-20, end of tonight's dashboard session. This supersedes
+ai-dashboard-plan.txt as the accurate picture of what's actually built and wired
+right now — that file's "Status" checklist only covered the original 2-chart
+reference pass; everything below reflects the full build-out that happened after
+it, plus every fix made tonight. Keep ai-dashboard-plan.txt for the architectural
+rationale (why WinForms.DataVisualization, the 4-layer pattern, the loyalty-tier
+reconstruction approach) — this file is the "what actually exists right now" doc.
+
+=====================================================================
+1. FULL SCOPE STATUS — all 10 originally-planned charts now have real endpoints
+=====================================================================
+
+Every chart from the original scope (5 shared + 2 Manager-only + 3 Admin-only)
+now has a working API endpoint, DTO, and WinForms client method. Whether each one
+is actually WIRED INTO a visible dashboard is a separate question — see sections
+2 and 3, several are built but currently unused or (for Admin) invisible due to a
+real bug.
+
+  API endpoints — CRM_Morcaffein.api/Controllers/DashboardController.cs (588 lines):
+    GET .../dashboard/loyalty-tier-progression?months=6
+    GET .../dashboard/peak-hours                              (PH UTC+8 fix applied tonight)
+    GET .../dashboard/age-demographics?days=30
+    GET .../dashboard/campaign-lift?days=14
+    GET .../dashboard/feedback-ratings?days=30
+    GET .../dashboard/barista-sales?days=30
+    GET .../dashboard/pos-diagnostics?days=30
+    GET .../dashboard/campaign-roi?days=30
+    GET .../dashboard/customer-ltv-churn?days=30
+    GET .../dashboard/audit-summary?days=30
+    GET .../dashboard/recent-orders?days=30&limit=10
+
+  DTOs — CRM_Morcaffein.api/DTOs/DashboardResponseDtos.cs (161 lines):
+    LoyaltyTierProgressionDto / LoyaltyTierMonthPoint
+    PeakHoursDto / PeakHoursCell
+    AgeDemographicsAovDto / AgeBracketPoint
+    ActiveCampaignLiftDto / DailyCampaignLiftPoint
+    FeedbackRatingDistributionDto / RatingDistributionPoint
+    BaristaSalesPerformanceDto / BaristaPerformancePoint
+    PosDiagnosticsDto
+    CampaignRoiDto / CampaignRoiItem
+    CustomerLtvChurnDto
+    AuditLogSummaryDto
+    RecentOrderSummaryDto
+
+  WinForms client — CRM_Morcaffein/Services/Api/DashboardApi.cs (125 lines) has a
+  matching Get*Async method for every endpoint above. CRM_Morcaffein/Controllers/
+  DashboardController.cs (WinForms) thin-wraps every one of them 1:1 (pure
+  coordination, no logic, per the established pattern).
+
+=====================================================================
+2. MANAGER DASHBOARD — CRM_Morcaffein/Views/Controls/ManagerDashboardView.cs
+=====================================================================
+
+Current layout, top to bottom (FlowLayoutPanel, TopDown — fixed tonight, was a
+TableLayoutPanel with a real row-ordering bug before):
+
+  1. Date range filter (Today / 7 Days / 1 Month / Custom) — ABOVE the KPI row.
+  2. KPI pods (4, equal width): Total Revenue, Sales per Order, Promos Redeemed,
+     Customer Happiness. Each opens a drill-down modal on click.
+  3. Peak Hours heatmap (full width) — self-painted grid, PeakHoursHeatmapControl.
+  4. Age Demographics (donut, AgeDemographicsControl) + Loyalty Tier Progression
+     (grouped column chart, LoyaltyTierProgressionControl) — side by side, 50/50.
+  5. Campaign Lift (ActiveCampaignLiftControl) — full width, two-line dual-axis.
+
+  No in-view header — removed tonight as redundant with FrmMain's own top-bar tab
+  label ("/ Dashboard").
+
+  KPI pod → modal mapping:
+    Total Revenue      -> RevenueDetailModal          (uses PosDiagnosticsDto)
+    Sales per Order    -> SalesPerOrderDetailModal     (uses recent orders + AOV)
+    Promos Redeemed    -> PromosRedeemedDetailModal    (uses CampaignRoiDto)
+    Customer Happiness -> CustomerHappinessDetailModal (uses FeedbackRatingDistributionDto)
+
+  Deliberately NOT shown as standalone chart cards (explicit user decision this
+  session): Barista Sales Performance, POS Diagnostics. Their underlying DTOs
+  (PosDiagnosticsDto, and BaristaSalesPerformanceDto is fetched nowhere on this
+  view at all) still get used where the KPI pods/modals need them — see the
+  BaristaSalesPerformanceControl / PosDiagnosticsControl note in section 4.
+
+  Fixes applied tonight (all verified via isolated `dotnet build`, 0 errors — see
+  note in section 5 about why a full in-place build kept failing):
+    - Root layout bug: TableLayoutPanel had 6 declared rows but no RowStyles ever
+      added, combined with every "row" being its own Dock=Top panel — this is what
+      was rendering the date filter above the KPI row instead of below it. Fixed
+      by switching to a plain FlowLayoutPanel(TopDown) — stacks in insertion order,
+      no row-styling ambiguity possible.
+    - Removed Campaign Lift by mistake in the same pass that removed Barista Sales
+      /POS Diagnostics (user did NOT want Campaign Lift gone — it's a core shared
+      chart, not a Manager-only one). Re-added as its own full-width row.
+    - KPI row felt cramped: height 84->96px, gap below it 10->18px, gap above (under
+      the filter) increased too.
+    - Chart rows expanded vertically (Peak Hours 245->280, Age/Loyalty row 255->300,
+      Campaign Lift new row at 280) so charts fill their cards instead of leaving
+      dead space.
+    - Loyalty Tier Progression was rendering ONE stacked bar per month (tiers piled
+      on each other) instead of 3 separate bars — ChartType StackedColumn -> Column
+      (WinForms Chart auto-clusters same-type Column series side by side).
+    - Real bug underneath that: `months = Math.Max(1, days / 30)` in ReloadAsync
+      evaluated to exactly 1 for EVERY date-filter preset (Today, 7 Days, 1 Month
+      all resolve to months=1 via integer division) — so only one month of tier
+      data was ever fetched, regardless of filter selection. Fixed by decoupling
+      Loyalty Tier Progression from the KPI date filter entirely — it's a
+      trend-over-time chart, it always requests a fixed 6-month trailing window now.
+    - Peak Hours heatmap wasn't reflecting new transactions where expected — root
+      cause was NOT a refresh/caching bug (verified: fresh instance created per
+      nav click, no caching anywhere in the client or API). Actual cause:
+      Order.OrderDate is stored in UTC with no local-time conversion, so a sale
+      landed in a UTC-shifted hour/day cell, not the one being checked. Fixed in
+      the API (`GetPeakHours`) with a fixed PH UTC+8 offset applied before
+      grouping — flagged as a hardcoded assumption, would need to become a
+      per-tenant setting if this app ever serves shops outside PH.
+    - Campaign Lift was a Column+Line combo chart (revenue bars + redemption
+      line, dual Y-axis) that visually "looked bad" — diagnosed as Column and Line
+      series not reliably agreeing on per-category spacing in this charting
+      library, a known-fragile combo. Converted to two Line series (same dual-axis
+      setup) per user's own suggestion — removes the spacing-mismatch class of bug
+      entirely since both series now share identical alignment logic.
+    - CSAT modal (CustomerHappinessDetailModal — used by BOTH dashboards) was
+      rendering all 5 star ratings as what looked like one merged bar. Real bug:
+      `Minimum`/`IsStartedFromZero` were set on `AxisX`, but for a `SeriesChartType.
+      Bar` (horizontal) chart, AxisX is STILL the category axis (role doesn't swap
+      between Bar and Column) — forcing numeric-axis properties onto a category
+      axis is what scrambled it. Fixed by switching to vertical Column (consistent
+      with every other chart in the dashboard) and moving those properties to
+      AxisY where they belong. The underlying data was never the problem — the API
+      already always returns all 5 star ratings, including zero-count ones.
+
+=====================================================================
+3. ADMIN DASHBOARD — CRM_Morcaffein/Views/Controls/AdminDashboardView.cs
+=====================================================================
+
+NOT touched by tonight's fixes. Built in the same session as Manager's full
+build-out, but nobody has gone back through it with the same fixes yet. Current
+layout, top to bottom:
+
+  1. Header panel: "Branch Admin Dashboard" title (left) + date range filter
+     (right), in one row. Not simplified to match Manager's filter-above-KPIs
+     layout — different design, not necessarily wrong, just not revisited.
+  2. KPI pods (3, equal width): Total Revenue, Member Lifetime Value, Customer
+     Happiness. Each opens a modal (RevenueDetailModal, CustomerLtvDetailModal,
+     CustomerHappinessDetailModal respectively — the CSAT modal fix above applies
+     here too automatically, same shared file).
+  3. Peak Hours heatmap (full width) — same control as Manager's, gets the UTC+8
+     fix automatically.
+  4. Age Demographics (40%) + Loyalty Tier Progression (60%) side by side —
+     note the DIFFERENT column split from Manager's 50/50, and note Loyalty Tier
+     here STILL HAS the months=1 bug — it was only fixed on ManagerDashboardView,
+     not here.
+  5. Campaign ROI (CampaignRoiControl, 50%) + Campaign Lift (ActiveCampaignLift
+     Control, 50%) side by side. Campaign Lift here gets the two-line fix
+     automatically (same shared control) — Campaign ROI has NOT been audited for
+     chart-rendering bugs (see section 4, it doesn't appear to use the Chart
+     control at all, may be a grid/label layout instead).
+
+  KNOWN BUGS — NOT YET FIXED, found while writing this doc, flagging rather than
+  silently fixing since Admin wasn't in scope for tonight's pass:
+
+    a) Row 4 (Staff Overrides & Audit Logs, AuditLogSummaryControl) is BUILT and
+       DATA-BOUND (`_auditSummaryCard.BindData(audit)` runs every ReloadAsync) but
+       is NEVER ADDED to `_bentoContainer.Controls` — only kpiRow, peakRow, row2,
+       row3 get added. The audit log card is completely invisible right now,
+       fetching data for nothing. One-line fix:
+       `_bentoContainer.Controls.Add(row4, 0, 4);` is missing after the row3 line.
+       (Also bump `RowCount` from 5 to account for it if using the TableLayoutPanel
+       row-index approach — or better, apply the same FlowLayoutPanel fix from
+       Manager's view while fixing this, since AdminDashboardView has the exact
+       same "TableLayoutPanel with no RowStyles" structure that caused Manager's
+       date-filter-pushed-to-top bug. It hasn't visibly manifested here yet only
+       because nobody's looked closely — the underlying fragility is identical.)
+
+    b) Same `months = Math.Max(1, days / 30)` bug as Manager had — always
+       evaluates to 1. Loyalty Tier Progression on the Admin dashboard is still
+       only ever showing one month, for the same reason Manager's was broken
+       before tonight's fix. Same fix applies: decouple from the date filter,
+       request a fixed window directly.
+
+=====================================================================
+4. FILES THAT EXIST BUT ARE CURRENTLY UNUSED / ORPHANED
+=====================================================================
+
+Confirmed via grep — zero `new X(...)` call sites anywhere in the app for these:
+
+  - FeedbackRatingDistributionControl.cs — a standalone "ratings card" (vertical
+    column chart, 1-5 stars) that duplicates what CustomerHappinessDetailModal's
+    chart already shows inside its modal. Never wired into either dashboard.
+    Decide: wire it into a dashboard as a real card, or delete it as dead code.
+  - BaristaSalesPerformanceControl.cs — built (has a working BindData method and
+    presumably a chart), but Manager deliberately dropped it from the view this
+    session and Admin never included it (it was always meant to be Manager-only
+    per the original scope). Its endpoint (`barista-sales`) and DTO still exist
+    and work — just nothing calls them. Not a bug, just currently orphaned.
+  - PosDiagnosticsControl.cs — same situation as Barista Sales: built, endpoint
+    works, `PosDiagnosticsDto` itself is very much IN USE (feeds Revenue/Sales-
+    per-Order KPI pods and modals on both dashboards) but the standalone POS
+    Diagnostics CHART CARD specifically is unused on both dashboards.
+
+None of these three are broken — they're just not currently shown anywhere. Fine
+to leave as-is until there's a decision on whether they get wired in later.
+
+=====================================================================
+5. VERIFICATION NOTES
+=====================================================================
+
+  - Every fix tonight was verified with a real `dotnet build` — 0 warnings, 0
+    errors — but NOT against the live bin/Debug output, because your own VS debug
+    session usually had the .exe file locked (this happened repeatedly). Builds
+    were instead run with `-o` pointed at an isolated temp folder purely to prove
+    the code compiles; your actual running app needs its own Stop -> Rebuild ->
+    Start in Visual Studio to pick any of this up, every single time — a plain
+    re-run without rebuilding keeps executing the old in-memory code.
+  - Admin dashboard fixes above (row4 wiring, months=1) are documented but NOT
+    applied — next session should treat section 3's two bugs as the immediate
+    to-do, ideally alongside porting the FlowLayoutPanel restructure from Manager
+    so Admin doesn't carry the same latent row-ordering fragility.
+  - Not audited this session at all: AgeDemographicsControl (confirmed uses
+    SeriesChartType.Doughnut, not further reviewed), CampaignRoiControl,
+    CustomerLtvChurnControl, AuditLogSummaryControl — grepped for
+    `SeriesChartType` and got no hits in the latter three, meaning they likely
+    render as grids/labels rather than WinForms.DataVisualization charts, but
+    this wasn't confirmed by actually reading them line by line.

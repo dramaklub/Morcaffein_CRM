@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../CRM_Morcaffein.api/CRM_Morcaffein.api.csproj" />
+  <Project Path="../CRM_Morcaffein.domain/CRM_Morcaffein.domain.csproj" />
+  <Project Path="../CRM_Morcaffein.infrastructure/CRM_Morcaffein.infrastructure.csproj" />
+  <Project Path="CRM_Morcaffein.winforms.csproj" />
+</Solution>

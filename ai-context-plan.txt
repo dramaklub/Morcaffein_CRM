@@ -1,0 +1,452 @@
+MORCAFFEIN CRM — PROJECT PLAN & BUSINESS CONTEXT
+(This file explains the WHY — the goal, decisions made along the way, and what's left.
+Pair it with the other two context files in this same folder:
+  - ai-context-bundle.txt          -> all the real .cs logic files (entities, services,
+                                       ViewModels, code-behind for every Form/UserControl)
+  - ai-context-designer-bundle.txt -> the *.Designer.cs files for the handful of
+                                       screens that still have one (FrmMain, FrmLogin,
+                                       FrmCustomerOnboarding, FrmLogFeedback,
+                                       CustomerManagementView, FeedbackManagementView,
+                                       StarRatingControl) — exact control positions/sizes/
+                                       colors as InitializeComponent() sets them. Everything
+                                       built THIS session (TransactionView,
+                                       ProductCardControl, CartLineControl,
+                                       FrmItemCustomizer, and the now-deleted
+                                       FadeOverlayPanel/PromoChipControl) is deliberately
+                                       code-only with NO Designer.cs — see section 2's
+                                       note on that convention. Properties/Resources.Designer.cs
+                                       was left out of the designer bundle — it's plain resx
+                                       code-gen boilerplate, not a UI layout file.)
+
+====================================================================
+1. WHAT THIS PROJECT IS
+====================================================================
+A Coffee Shop Loyalty & Retention CRM ("Morcaffein") — a WinForms desktop app (.NET,
+net10.0-windows) for the STAFF side of the business (baristas/managers at the counter),
+backed by a real EF Core + SQL Server database (not just mocked long-term, though the UI
+is currently wired to an in-memory mock service layer — see section 4).
+
+Weekend goal (as stated by the project owner): "100% finish the Staff UI which composes
+of the recording of transactions, the management of customers (searching, registration,
+history pullup) and being able to do feedbacks (doesn't matter if the manager can see or
+not in their UI)."
+
+So the Staff UI has three pillars — ALL THREE ARE NOW UI-COMPLETE against mock data:
+  1. Transactions / POS — recording sales           -> DONE (this session's main work)
+  2. Customer management — search/register/history  -> DONE
+  3. Feedback — logging + reviewing tickets          -> DONE
+
+Login/auth is explicitly OUT OF SCOPE for now ("i dont need to do logins for now just the
+raw and complete staff UI"). FrmLogin exists as a stub but is never shown — Program.cs
+launches straight into FrmMain, and a placeholder employee session is seeded in code
+(see section 4).
+
+The project owner's own next-step framing (verbatim): "what im thinking of for now would
+be (plans) is to connect everything to the database and adjust alignments" — see section
+8 for what that concretely means.
+
+====================================================================
+2. ARCHITECTURE / STACK DECISIONS
+====================================================================
+- WinForms, not WPF (the original prompt this project started from assumed WPF — that
+  was corrected early on after inspecting the actual solution).
+- ARCHITECTURE IS MVC, NOT MVVM (changed this session). The app started out hand-rolled
+  MVVM (ObservableObject/RelayCommand in Common/), but the assessment rubric this project
+  is graded against explicitly requires MVC, and MVVM doesn't satisfy that literally (no
+  Controller class; ViewModels expose bindable properties/commands the View subscribes
+  to, which isn't the MVC shape). All three Staff UI tabs were reshaped into real
+  Controllers:
+    - Controllers/CustomerController.cs   (search, register, order history/ledger,
+      point-adjustment request-and-approve — absorbs the old CustomersViewModel +
+      CustomerProfileViewModel + CustomerOnboardingViewModel)
+    - Controllers/FeedbackController.cs    (ticket list/search, log a new ticket —
+      absorbs FeedbackViewModel + FeedbackDetailViewModel + LogFeedbackViewModel)
+    - Controllers/TransactionController.cs (POS: cart, promos, checkout — absorbs
+      TransactionViewModel; ItemCustomizerViewModel was deleted outright since it never
+      talked to a Service/Model at all — FrmItemCustomizer just keeps plain fields now)
+  Controllers are plain classes: request-in method, result-out return value. No
+  INotifyPropertyChanged, no ICommand, no bindable properties — the View calls a method
+  and updates its own controls with what comes back, instead of setting a property and
+  waiting on a PropertyChanged/CanExecuteChanged event. Common/ObservableObject.cs and
+  Common/RelayCommand.cs are DELETED (nothing referenced them once every ViewModel was
+  gone) — if you're wondering where they went, that's why. The ViewModels/ folder itself
+  is now empty.
+  One exception worth knowing: TransactionController is NOT stateless/one-shot like the
+  other two — it holds the in-progress Order/Customer for one active sale (a Controller
+  holding session-scoped state across several calls is normal MVC, e.g. a shopping-cart
+  controller), created fresh each time TransactionView's customer search finds someone.
+
+- THE MODEL IS ANEMIC (changed in a later session, on top of the MVC change above). The
+  first MVC pass still gave domain entities real behavior methods (Order.ApplyPromo,
+  Feedback.SetRating, PointAdjustmentRequest.Approve, Campaign.CalculateDiscount, etc.) —
+  a DDD-style "rich domain model." The rubric's actual expectation, stated explicitly by
+  the project owner, is: "model is just the database schema... should just contain
+  getters and setters and connections" — i.e. plain data, no logic, matching the
+  Company/CompanyDatabase/Device entities that were always shaped that way. Every domain
+  entity in CRM_Morcaffein.domain/entities was stripped down to match:
+    - ALL validation, calculations, and state-machine methods were REMOVED from every
+      entity (SetName/SetContact/SetEmail, AddPoints/DeductPoints/AdjustPoints,
+      ApplyPromo/RemovePromo/RecalculateTotals/CompleteOrder, Approve/Reject, SetRating/
+      MarkAsResolved/Dismiss, CalculateDiscount/CanRedeem/IsEligibleForCustomer/
+      IsCurrentlyActive, VerifyPassword/Lock/Unlock, SetRole/PromoteTo/HasRole,
+      SetProductCode/Name/Category/BasePrice, MarkAsDeleted/Restore, AttachCampaign/
+      UpdateDiscountUsed — all gone).
+    - Every property that was `{ get; private set; }` (or `protected set`) is now plain
+      `{ get; set; }`.
+    - Computed BUSINESS-RULE properties were also removed and moved to Controllers:
+      Customer.Tier (-> CustomerController.GetTier(int pointsBalance), a static method —
+      TransactionController calls it too, e.g. for promo tier-matching), Employee.
+      IsManager/IsBarista/IsAdmin (-> CustomerController.IsManager(Employee?)/IsAdmin(...),
+      static helpers), Customer.IsInactive/IsBirthdayToday (-> private statics inside
+      TransactionController, since that's the only place they're used — promo
+      eligibility).
+    - ONE property was deliberately kept as a computed getter: BasePerson.FullName. It's
+      pure string formatting with no validation and no business meaning, unlike Tier/
+      IsManager/etc. — a judgment call, flagged to the owner rather than silently decided,
+      not yet pushed back on.
+    - OrderItem.UnitPrice/SubTotal (previously computed from BaseSizePrice + modifiers)
+      are now plain stored properties that TransactionController recalculates and assigns
+      explicitly on every cart mutation (RecalculateItemPricing/RecalculateOrderTotals) —
+      needed because DataGridView columns bind to them via DataPropertyName/reflection,
+      which requires a real property, not a Controller-side-only calculation.
+  - SERVICES BECAME PURE CRUD as a direct consequence. Every I*Service interface
+    (ICustomerService, IOrderService, IFeedbackService, ICampaignService,
+    IPointAdjustmentService) had its validating/business-rule methods either removed
+    (Register/CreateQuickCustomer's validation, LogFeedback's, RequestAdjustment/Approve/
+    Reject's role-checks and self-approval block, ApplyPromo/RemovePromo/AddItem/
+    UpdateItem's cart math and merge-vs-new-line decisions) or replaced with a plain `Save`/
+    `Create*` method that only assigns an ID and appends to the in-memory store — the
+    Controllers now do 100% of the validation/decision-making and just tell the Service
+    "persist this already-valid, already-computed thing." IProductCatalogService was
+    already pure query and needed no changes. Mock*Service classes were rewritten to match
+    (see Services/Mock/*.cs).
+    ONE SIDE EFFECT WORTH KNOWING: this also removed the old "belt and suspenders" role
+    enforcement that used to live independently in MockPointAdjustmentService (it used to
+    re-check IsManager/IsAdmin itself, separately from the Controller's own check, so a
+    caller that somehow bypassed CustomerController still couldn't cheat). That
+    server-side-independent-of-Controller check is gone now — Controllers are the only
+    place authorization is checked. Worth revisiting once real login/API auth exists.
+  - Common/PrivateSetterAccessor.cs is DELETED — it was a reflection shim that existed
+    purely to bypass private setters for ID assignment in the mock layer; with every
+    entity now using plain public setters, Mock*Service classes just assign
+    `entity.SomeId = _store.NextSomeId();` directly. The Common/ folder is now empty too.
+  - MockDataStore.WalkInCustomer / CreateWalkInCustomer() were DELETED along with it — the
+    "every POS sale needs a real customer" policy (see section 3) made this genuinely dead
+    code, not just an unused-but-kept fallback; IOrderService.StartOrder's customerId
+    parameter is non-nullable now.
+  - Ran `dotnet ef migrations has-pending-model-changes` after this whole conversion —
+    still reports no pending changes. Stripping methods and changing property
+    accessibility doesn't affect the EF Core column/relationship mapping at all, so
+    nothing needed migrating.
+- DDD-ish domain entities (CRM_Morcaffein.domain/entities): mostly private-set properties,
+  mutated only through domain methods (Customer.AddPoints/DeductPoints/AdjustPoints,
+  Order.AddItem/ApplyPromo/CompleteOrder, PointAdjustmentRequest.Approve/Reject). Campaign
+  is the one entity that still uses plain public get/set (not yet refactored).
+- EF Core 10 with TenantCrmDbContext (IdentityDbContext-based), SQL Server provider. The
+  connection string in CRM_Morcaffein.api/appsettings.json points to a REAL hosted SQL
+  Server (db67068.public.databaseasp.net), not localhost. Migrations get generated/applied
+  using CRM_Morcaffein.api as --startup-project (it holds the DI registration EF's
+  design-time tooling needs).
+- "Card" table layout convention: every management tab (Customers, Feedback) uses the same
+  boxed-table pattern — an outer padded panel, a white bordered card containing a header
+  row (search box top-left, primary action button top-right) and the DataGridView below
+  it. Transactions/POS deliberately breaks from this in its middle/right content (see
+  section 6) since it's a different interaction model (a register, not a record browser),
+  but still lives inside the same outer card/border convention for visual consistency.
+- Left-side drawer convention: clicking a grid row opens a detail drawer on the LEFT of the
+  card (moved there from the right per explicit feedback) showing profile/ticket info.
+  (Transactions/POS uses a left COLUMN for customer search instead of a drawer — see below.)
+
+====================================================================
+3. KEY BUSINESS RULES (the parts that aren't obvious from code alone)
+====================================================================
+- POINT ADJUSTMENTS ARE A TWO-STEP APPROVAL WORKFLOW, NOT AN INSTANT EDIT:
+    * A Manager (Employee.IsManager: Manager/Admin/SuperAdmin) can REQUEST a point
+      adjustment for a customer (PointAdjustmentRequest, status "Pending").
+    * Only an Admin (Employee.IsAdmin: Admin/SuperAdmin) can APPROVE or REJECT it.
+      Approving actually applies the point change (via Customer.AdjustPoints) and writes
+      a PointLedger row; rejecting just closes out the request with no balance change.
+    * An employee can NEVER approve their own request (enforced in
+      PointAdjustmentRequest.Approve) — deliberate separation of duties.
+    * This Staff/Manager app is explicitly NOT the admin console — the approve/reject UI
+      exists in code (CustomerProfileViewModel.CanApprove, the approvalSectionPanel) but
+      the placeholder logged-in session is seeded as a Manager (not Admin), so in THIS app
+      you'll only ever see the "submit a request" half. Admin approval is a different,
+      not-yet-built surface.
+    * The customer's adjustment-requests list only shows PENDING requests — once approved
+      (goes to the ledger) or rejected, it drops off this list; it's meant to read as a
+      compact "things waiting on approval" queue, not a full audit log.
+- Feedback tickets: any staff member can log one against a customer (no role gate — the
+  "+ Log Feedback" button has no precondition, since the modal it opens has its own
+  customer search built in). Resolving a ticket can optionally award bonus points via
+  ICampaignService (service-recovery gesture); dismissing just closes it with no reward.
+- Transactions/POS ALWAYS requires a real, identified Customer — there is no guest/walk-in
+  checkout path in the UI (see the WalkInCustomer note below; it exists in the mock layer
+  as a fallback but the POS screen itself never surfaces or needs it). Picking a customer
+  (via the ID/phone search box) is what starts a transaction; before that, the register
+  displays but can't add to cart or check out.
+- Tiers (Bronze/Silver/Gold whatever) are labeled as plain text ONLY — deliberately no
+  color-coding per tier. Same for order/feedback status — no traffic-light colors anywhere
+  in the app; the whole palette is brand-brown (#572400) tints/tones/shades plus plain
+  white/grey neutrals only (see BrandPalette.cs doc comment).
+- Guest/walk-in orders: the Order entity's constructor requires a positive CustomerId (no
+  concept of a truly customer-less sale in the domain today). The mock layer works around
+  this with a hidden MockDataStore.WalkInCustomer that's deliberately NOT in the public
+  Customers list — but as noted above, the POS UI doesn't currently exercise this path at
+  all (every transaction picks a real customer first). This remains a known domain
+  limitation if a genuine "no customer" sale is ever needed.
+- VAT and PWD/Senior discount on the POS Payables panel are DISPLAY-ONLY placeholders right
+  now, not real business logic: VAT is shown as an informational 12%-of-total breakdown
+  (assumes VAT-inclusive pricing, PH-receipt style) and does NOT change what's actually
+  charged; PWD/Senior Disc. is a static "₱0.00" line with no input wired up yet. Real
+  VAT/PWD-discount handling needs an actual domain-level decision before it's functional.
+
+====================================================================
+4. WHAT'S MOCKED VS REAL RIGHT NOW
+====================================================================
+- The domain entities, DbContext, and migrations are REAL and applied to the actual remote
+  SQL Server database.
+- The UI, however, currently talks ONLY to an in-memory mock service layer
+  (Services/Mock/Mock*Service.cs, all sharing one MockDataStore singleton via
+  ServiceRegistry). This was a deliberate, explicit instruction: build the UI against
+  mocks first, don't touch the real API/HTTPS layer yet. This is exactly what section 8's
+  "connect everything to the database" plan will replace.
+- ServiceRegistry.PlaceholderStaffAccount stands in for "whoever is logged in" until
+  FrmLogin/real auth exists. It's currently seeded as the Manager employee (Miguel Santos)
+  specifically so the point-adjustment REQUEST flow is testable without an admin login,
+  while approve/reject correctly stays hidden (see section 3).
+- When real EF-backed services are ready to replace the mocks: swap the right-hand side of
+  each property in ServiceRegistry.cs (nothing else should need to change, since
+  everything else depends only on the I*Service interfaces) and delete the Mock* classes
+  plus Common/PrivateSetterAccessor.cs (a reflection shim only the mocks need, to fake ID
+  assignment on private-set entities). See section 8 for the fuller checklist.
+
+====================================================================
+5. UI DECISIONS MADE ALONG THE WAY — SHELL / CUSTOMERS / FEEDBACK
+====================================================================
+- Sidebar lives on the RIGHT, not left. It uses a distinctly different tone (Tint85) from
+  both the page background (Tint95) and white card surfaces, with the footer a step darker
+  still (Tint75) — this was tuned twice because the first pass was too similar in tone to
+  the rest of the UI.
+- A thin top bar spans the full width above the sidebar (brand mark + "Morcaffein" + active
+  tab name), added after the sidebar so it visually overlaps/sits above where the sidebar
+  starts. Deliberately modest in height (60px) — "presence, not a second header." (Note:
+  the Transactions/POS tab does NOT get a second banner of its own — see section 6, that
+  was tried and explicitly reverted.)
+- No account-switcher control anywhere — the logged-in staff name/role in the sidebar
+  footer is a plain read-only Label, not a ComboBox (explicitly rejected: "the staff even
+  for now shouldnt even be interactable why does it have a drop down").
+- Table headers use a light-to-medium brand tint (Tint50) with dark text — NOT a solid
+  brand-brown fill with white text (that was the original look; changed because brand
+  color should stay reserved for primary action buttons, not compete across every grid).
+  Selected-row highlight uses the lighter tint (Tint90) — the two were deliberately swapped
+  from an earlier pass. Column-header click-to-sort no longer flashes the default system
+  blue highlight.
+- Disabled buttons must visibly grey out (BrandPalette.ButtonDisabledFill/Text via
+  Theme/ButtonStyler.cs's TrackEnabledState helper) — WinForms Flat buttons don't do this
+  automatically, they just keep whatever BackColor was set and only fade the text, which
+  read as "still looks clickable" and was called out explicitly. Apply this helper to any
+  new button whose Enabled is toggled at runtime.
+- Star ratings (Feedback logging) are hollow/outlined (☆) when unfilled and solid brand-
+  colored (★) up to the hovered/clicked count — not just a color toggle on a solid glyph.
+- Onboarding a new customer is a 2-step modal (Details -> Confirm) with a Back button, for
+  a deliberate confirmation step before creating a record.
+- Log Feedback modal is also 2-step (pick customer via its own search -> rating/category/
+  notes), with Cancel only shown on step 1 and replaced by Back on step 2 (having both
+  visible at once was flagged as confusing/redundant).
+- The Feedback ticket drawer's review content (rating/category/status/date/notes) is
+  boxed into its own bordered card, visually separated from the "Issue Service Recovery
+  Promo" decision panel below it — these were originally just a flat stack of labels and
+  felt like one undifferentiated block.
+- Order History (in the Customers drawer) has NO Status column — every row is a completed
+  sale, so a status column would just say "Completed" on every single row. Same reasoning
+  removed the point-adjustment-requests grid down to just Date/Pts/Status (Requester/
+  Approver/Reason were dropped since the list is pending-only now).
+
+====================================================================
+6. TRANSACTIONS/POS — DESIGN, BUILT FROM THE OWNER'S OWN FIGMA WIREFRAME
+====================================================================
+The owner sketched their own low-fi wireframe (search bar, customer profile, drink cards
+with S/M/L/XL size buttons, an Order box, a Payables box, "Log Sale") and asked for "not
+1:1 but the idea should be there." Final layout (Views/Controls/TransactionView.cs):
+
+- ONE boxed card (matches the Customers/Feedback SurfacePrimary + FixedSingle-border
+  convention), containing three regions side by side plus nothing outside it — no second
+  top banner. An earlier pass added a tinted customer banner spanning the full width above
+  everything; this was explicitly rejected ("there is no need for a second top bar") and
+  removed. Customer info now lives inline in the left column instead.
+- LEFT column: a single search box that looks up ONLY by Customer ID or contact number
+  (ICustomerService.FindByPhoneOrId — the exact same lookup already used elsewhere in the
+  app), NOT a browsable list of every customer. An earlier pass used a ListBox of all
+  customers plus free-text name search; that was explicitly rejected in favor of this
+  narrower, ID/phone-only search. The matched customer's profile (name, tier, points,
+  contact) appears directly below the search box only once found. "Select a Promo" sits at
+  the bottom of this column and opens a ContextMenuStrip of eligible campaigns (see below)
+  rather than a permanent visible list.
+- MIDDLE: "Drinks" header + a "Sort by Category" ComboBox + a drink-name search box, then a
+  wrapping FlowLayoutPanel of ProductCardControl cards. Each card shows S/M/L/XL quick-add
+  buttons across its bottom (positional labels — S/M/L/XL by index, not derived from each
+  product's actual SizeName text, since real seed data only has 1-2 sizes per product like
+  "Regular (12oz)"/"Large (16oz)"); tapping one adds that size, qty 1, no modifiers,
+  straight to the cart. Clicking the card body itself (not a size button) instead opens
+  FrmItemCustomizer, the full modal for picking modifiers or a different quantity.
+- RIGHT column (250px): an "Order" box (Fill, scrolls) listing CartLineControl rows — each
+  a compact "Name (Size) [-] 2x [+] [✕]" inline stepper, NOT a DataGridView, since this is
+  the one place in the app that deliberately breaks from the table convention (a modern POS
+  order list reads better this way). Below it, a "Payables" box with Subtotal / Discount /
+  VAT (12%, display-only) / PWD-Senior Disc. (static ₱0.00 placeholder) / Total. Below THAT,
+  inside the SAME right column (not spanning the whole screen), a "Log Sale" button — an
+  earlier pass had this as a full-width bar at the bottom of the entire tab; that was
+  explicitly rejected ("the log sale spans across the screen which shouldnt be and it
+  should only span along the order panel") and moved inside the column.
+- Seeded a genuinely-always-available promo, "Exam Week" (10% off, all tiers, no minimum
+  spend, 50 redemptions/customer), because the other seeded campaigns (Birthday Treat,
+  Gold Member Perk, We Miss You) are all narrowly gated and rarely eligible in ad-hoc
+  testing — "Select a Promo" would otherwise almost always show "no promos available."
+
+GOTCHA WORTH REMEMBERING: CartLineControl originally had `Dock = DockStyle.Top` set on
+itself while being added as a child of a FlowLayoutPanel (TopDown). A Dock value on a
+child of a FlowLayoutPanel fights that panel's own positioning logic — this was the exact
+cause of a real bug ("the order panel... does not show the orders at all"). Fix: never set
+Dock on a direct child of a FlowLayoutPanel; let the flow panel position it and just set
+Size/Width instead.
+
+====================================================================
+7. PENDING / KNOWN GAPS (not yet assigned as the active task)
+====================================================================
+- Real login (FrmLogin) is intentionally deferred — not a bug, just not in scope yet.
+- A future admin console (or an admin-capable login) is the natural home for the approve/
+  reject side of the point-adjustment workflow, which currently exists in code but has no
+  reachable UI in this app (see section 3).
+- VAT/PWD-Senior discount on the POS are cosmetic placeholders only (see section 3) —
+  turning them into real, functioning discount logic is unassigned future work.
+- The wireframe's sidebar sketch showed a standalone "Registration" nav item separate from
+  Transactions/Customers/Feedback; this was NOT added (flagged to the owner, not acted on
+  unilaterally — a bigger scope call than "redesign the POS").
+
+====================================================================
+8. ACTIVE NEXT PLANS
+====================================================================
+Original framing (project owner): "what im thinking of for now would be (plans) is to
+connect everything to the database and adjust alignments so go for it." Since then, the
+DB-connection workstream was planned out in detail in conversation — decisions below are
+LOCKED IN, but NOT YET STARTED (explicitly paused — "for now dont do it"). This section is
+the plan to resume from.
+
+--------------------------------------------------------------------
+8A. CONNECT EVERYTHING TO THE REAL DATABASE — LOCKED ARCHITECTURE
+--------------------------------------------------------------------
+DECIDED (via explicit A/B choice with the owner):
+  - Architecture: WinForms -> HTTP (JWT-authenticated) -> CRM_Morcaffein.api -> EF Core ->
+    real online SQL Server. NOT direct WinForms-to-EF-Core. Reason: the DB is a multitenant
+    setup (one master DB tracks tenants) and the owner wants it working online — a client
+    app holding a raw SQL connection string doesn't fit that, so the API becomes the one
+    place that holds DB credentials and resolves tenant/identity from a token instead.
+  - Offline support: NOT needed. Always-online to the real database is acceptable. No local
+    cache, no sync/conflict logic — this simplifies things a lot, don't add it speculatively.
+  - Deployment nuance: the API must run somewhere CENTRAL (one shared host), not bundled
+    per-terminal — if every terminal ran its own copy of the API against the remote DB,
+    every terminal would still hold DB credentials in its own appsettings.json, defeating
+    the whole point. While building, running the API on localhost during dev is normal and
+    not a problem; picking where it's actually hosted for real multi-terminal use is a
+    separate, later decision that doesn't block writing the code below.
+  - Multitenancy is NOT to be built out fully yet — only "tenant A" exists/matters right
+    now. Hardcode tenant resolution to tenant A for now (e.g. a fixed tenantId claim in the
+    JWT); build real master-DB tenant lookup only once a second tenant actually exists to
+    test against. Don't over-build for zero real tenants.
+
+THE ONE STRUCTURAL BLOCKER, AND ITS FIX (this is the actual first code task):
+  - ICustomerService / IOrderService / IProductCatalogService / IFeedbackService /
+    ICampaignService / IPointAdjustmentService currently live in CRM_Morcaffein (the
+    WinForms project) under Services/*.cs.
+  - CRM_Morcaffein.api CANNOT reference CRM_Morcaffein (WinForms) — CRM_Morcaffein already
+    references CRM_Morcaffein.api (see its .csproj), so a reference the other way would be
+    circular. This means the API project literally cannot see these interfaces to
+    implement them for real, as things stand today.
+  - THE FIX: physically move all six interface files from CRM_Morcaffein/Services/ into
+    CRM_Morcaffein.infrastructure/Services/, WITHOUT changing their `namespace
+    CRM_Morcaffein.Services;` declaration. C# namespaces aren't tied to which project a
+    file physically lives in, so every existing `using CRM_Morcaffein.Services;` in the
+    WinForms codebase (ViewModels, Mock* classes, etc.) needs ZERO changes. infrastructure
+    is already referenced by both api and winforms, so after this one move, both sides can
+    finally see the same interface definitions. Do this move FIRST, before anything else —
+    everything below depends on it.
+  - No 5th project (e.g. a separate "contracts" project) is needed for DTOs either — the
+    WinForms project already has a ProjectReference to CRM_Morcaffein.api, so DTOs can live
+    directly in CRM_Morcaffein.api/Contracts/ and WinForms can reference them from there
+    directly once it needs to.
+
+WHERE EACH NEW PIECE GOES (after the interface move above):
+  | What                                    | Lives in                                  |
+  |------------------------------------------|-------------------------------------------|
+  | I*Service interfaces (moved, not rewritten) | CRM_Morcaffein.infrastructure/Services/  |
+  | Real EfCore*Service classes (impl. the interfaces against TenantCrmDbContext) | CRM_Morcaffein.infrastructure/Services/EfCore/ |
+  | DTOs (LoginRequest, LoginResponse, CustomerDto, ...) | CRM_Morcaffein.api/Contracts/  |
+  | Controllers (AuthController, CustomersController, ...) | CRM_Morcaffein.api/Controllers/ |
+  | JWT issuing + validation config          | CRM_Morcaffein.api (Program.cs + AuthController) |
+  | Api*Service classes (HttpClient-based, implement the SAME interfaces) | CRM_Morcaffein/Services/Api/ (new folder, sibling to the existing Services/Mock/) |
+  | ServiceRegistry.cs                       | unchanged location — just swaps which concrete class each property builds |
+
+  Because Api*Service implements the exact same interfaces the ViewModels/Views already
+  depend on, NO ViewModel or View code needs to change at all for this migration — the
+  swap is entirely contained to ServiceRegistry.cs plus the new Api*Service classes.
+
+SEQUENCING — one service at a time, NOT a big-bang swap:
+  0. Scaffolding: the interface move above, JWT config in the API, an ApiClient helper in
+     WinForms (base URL + Bearer token attachment + JSON), a real POST /auth/login endpoint,
+     and FINALLY wiring up FrmLogin for real (it's been an unused stub this whole project —
+     Program.cs currently launches straight into FrmMain with a placeholder session; this
+     is the point where real login replaces that placeholder for good).
+  1. Customers — simplest, most self-contained, proves the whole pattern end-to-end.
+  2. Feedback — same shape; its schema (DecidedBy/DecidedAt/DecisionNotes) is already
+     migrated to the real DB from an earlier session.
+  3. Campaigns / Point Adjustments — this is where server-side role enforcement (the
+     Manager-requests/Admin-approves rule, currently only checked client-side in
+     CustomerProfileViewModel) finally gets enforced by the API too, via JWT role claims.
+  4. Products / Orders (Transactions/POS) — most complex (cart mutation methods: AddItem,
+     UpdateItem, RemoveItem, ApplyPromo, RemovePromo, CompleteOrder), saved for last once
+     the pattern is proven on simpler services.
+  5. Cleanup: delete Services/Mock/*.cs and Common/PrivateSetterAccessor.cs once nothing
+     references them any more.
+
+  WHY gradual, concretely: ServiceRegistry.cs's properties are fully independent of each
+  other (Customers, Orders, Feedback, Campaigns, PointAdjustments, Products each their own
+  line) and every View/ViewModel only ever depends on ITS OWN interface — nothing depends
+  on "the mock layer" as a whole. So one line in ServiceRegistry can be swapped to an
+  Api*Service while every other line still builds a Mock*Service, and both halves of the
+  app keep working simultaneously. This keeps each step small, independently testable, and
+  trivially revertible (flip one line back) if something's wrong — versus debugging six
+  moving parts at once with no working baseline.
+
+  KNOWN, EXPECTED SIDE EFFECT DURING THE TRANSITION: while partially migrated, different
+  tabs are reading from genuinely different data sources. E.g. if Customers is API-backed
+  but Transactions/POS is still on the mock, a customer created for real through the
+  Customers tab will NOT show up in the POS's customer search (which still only knows
+  MockDataStore's 3 seeded customers), and vice versa. This is not a bug to chase during
+  the migration — it resolves itself the moment every service has moved over and the mocks
+  are deleted in step 5.
+
+STILL OPEN / DEFERRED FROM SECTION 7, revisit when reached:
+  - What happens to MockDataStore.WalkInCustomer / the guest-order gap — since "every POS
+    sale needs a real customer" is now settled as permanent product policy (see section 3),
+    this is likely just dead code to drop when Orders (step 4) is migrated, not a real gap
+    to solve.
+  - Order.ApplyPromo's missing duplicate-guard (section 7) — a good candidate to fix for
+    real once EfCoreOrderService is being written in step 4, rather than leaving it as a
+    UI-only guard forever.
+  - JWT token lifetime: no requirement decided yet — a shift-length token (e.g. 8-12 hours)
+    with no refresh-token complexity is a reasonable default for a desktop shift-based app,
+    but this is a detail to nail down in step 0, not a blocker to planning further.
+  - The connection string already points at a live, real, shared database
+    (db67068.public.databaseasp.net) — this work is NOT sandboxed like the mock layer was.
+    Be careful with anything that seeds/deletes data against it.
+
+--------------------------------------------------------------------
+8B. ADJUST ALIGNMENTS (a UI polish pass)
+--------------------------------------------------------------------
+   - No specific list of misalignments was given yet — this needs the owner to point out
+     which screens/controls look off once they're looking at the app again, OR a general
+     visual sweep (run the app, check each tab at a few window sizes, look for anything
+     that doesn't line up cleanly — spacing, control widths, text baselines, etc.).
+   - Don't restart layout decisions already settled in sections 5-6 above without a
+     specific complaint — this is about polish/alignment, not another redesign pass.

@@ -1,0 +1,61 @@
+@CRM_Morcaffein.api_HostAddress = http://localhost:5035
+
+GET {{CRM_Morcaffein.api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
+GET http://localhost:5035/tenant/1/customers
+Accept: application/json
+
+###
+
+###
+
+POST {{CRM_Morcaffein.api_HostAddress}}/company-databases
+Content-Type: application/json
+
+
+
+{
+
+ "CompanyId": 1,
+ "ServerName": "db67068.public.databaseasp.net",
+ "DatabaseName": "db67068",
+ "IsActive": true
+
+}
+
+###
+
+GET {{CRM_Morcaffein.api_HostAddress}}/test-tenant/1
+Accept: application/json
+
+###
+### 
+POST http://localhost:5035/api/tenant/1/auth/login
+Content-Type: application/json
+
+{
+  "username": "renz.arriola",
+  "password": "password123"
+}
+###
+###
+
+ POST http://localhost:5035/api/tenant/1/dev/rehash-credentials
+
+### Login and capture token
+# @name login
+POST http://localhost:5035/api/tenant/1/auth/login
+Content-Type: application/json
+
+{
+  "username": "renz",
+  "password": "password"
+}
+
+### Use the captured token
+GET http://localhost:5035/api/tenant/1/dashboard/revenue-vs-discounts?days=30
+Authorization: Bearer {{login.response.body.$.token}}
+Accept: application/json

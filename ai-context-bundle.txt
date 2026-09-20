@@ -1,0 +1,4682 @@
+===== FILE: CRM_Morcaffein.domain/entities/BaseEntity.cs =====
+using System;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public abstract class BaseEntity
+{
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/BasePerson.cs =====
+namespace CRM_Morcaffein.domain.entities;
+
+public abstract class BasePerson : BaseEntity
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string ContactNumber { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+
+    // Plain formatting, not a business rule — kept as a computed property rather than
+    // moved to a Controller since it has no validation and no external dependency.
+    public string FullName => $"{FirstName} {LastName}".Trim();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Campaign.cs =====
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Campaign : BaseEntity
+{
+    public int CampaignId { get; set; }
+    public string PromoName { get; set; } = string.Empty;
+    public string PromoCategory { get; set; } = string.Empty;
+
+    public string DiscountType { get; set; } = "Percentage";
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal DiscountValue { get; set; }
+
+    public string TargetTier { get; set; } = "All";
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? MinPurchaseAmount { get; set; }
+
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal? MaxDiscountAmount { get; set; }
+
+    public int MaxRedemptionsPerCustomer { get; set; } = 1;
+
+    public int? RequiredProductId { get; set; }
+    public int? RewardProductId { get; set; }
+
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public int MadeBy { get; set; }
+    public int? ApprovedBy { get; set; }
+
+    public virtual Employee? Creator { get; set; }
+    public virtual Employee? Approver { get; set; }
+    public virtual Product? RequiredProduct { get; set; }
+    public virtual Product? RewardProduct { get; set; }
+    public virtual ICollection<CampaignRedeem> CampaignRedeems { get; set; } = new List<CampaignRedeem>();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/CampaignRedeem.cs =====
+using System;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class CampaignRedeem : BaseEntity
+{
+    public int RedeemId { get; set; }
+    public int CampaignId { get; set; }
+    public int OrderId { get; set; }
+    public decimal DiscountUsed { get; set; }
+    public DateTime RedeemDate { get; set; } = DateTime.UtcNow;
+
+    public virtual Campaign? Campaign { get; set; }
+    public virtual Order? Order { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Company.cs =====
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace CRM_Morcaffein.domain.entities
+{
+    public class Company
+    {
+        public int CompanyId { get; set; }
+        public string CompanyCode { get; set; } = string.Empty;
+        public string CompanyName { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        public ICollection<Device> Devices { get; set; } = new List<Device>();
+
+
+
+    }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/CompanyDatabase.cs =====
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace CRM_Morcaffein.domain.entities
+{
+    public class CompanyDatabase
+    {
+        public int CompanyDatabaseId { get; set; }
+        public int CompanyId { get; set; }
+        public string ServerName { get; set; } = string.Empty;
+        public string DatabaseName { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+
+        public string CredentialKey { get; set; } = string.Empty;
+
+        public Company? Company {  get; set; }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Credential.cs =====
+using System;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Credential : BaseEntity
+{
+    public int CredentialId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public int EmployeeId { get; set; }
+    public DateTime? LastLoginDate { get; set; }
+    public int FailedLoginAttempts { get; set; }
+    public bool IsLocked { get; set; }
+
+    public virtual Employee? Employee { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Customer.cs =====
+using System;
+using System.Collections.Generic;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Customer : BasePerson
+{
+    public int CustomerId { get; set; }
+    public DateTime? Birthday { get; set; }
+    public DateTime LastVisitDate { get; set; } = DateTime.UtcNow;
+    public int PointsBalance { get; set; }
+
+    public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
+    public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
+    public virtual ICollection<PointLedger> PointLedgers { get; set; } = new List<PointLedger>();
+    public virtual ICollection<PointAdjustmentRequest> PointAdjustmentRequests { get; set; } = new List<PointAdjustmentRequest>();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Device.cs =====
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace CRM_Morcaffein.domain.entities
+{
+    public class Device
+    {
+
+        public Guid DeviceId { get; set; }
+
+        public int CompanyId { get; set; }
+
+        public string DeviceCode { get; set; } = string.Empty;
+
+        public string DeviceName { get; set; } = string.Empty;
+
+        public bool IsActive { get; set; }
+
+        public DateTime CreatedAt { get; set; }
+
+        public Company Company { get; set; } = null!;
+
+       
+    }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Employee.cs =====
+using System.Collections.Generic;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Employee : BasePerson
+{
+    public int EmployeeId { get; set; }
+    public string Role { get; set; } = "Barista";
+
+    public virtual Credential? Credential { get; set; }
+    public virtual ICollection<Order> OrdersCreated { get; set; } = new List<Order>();
+    public virtual ICollection<Campaign> CampaignsCreated { get; set; } = new List<Campaign>();
+    public virtual ICollection<Feedback> FeedbacksLogged { get; set; } = new List<Feedback>();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Feedback.cs =====
+using System;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Feedback : BaseEntity
+{
+    public int TicketId { get; set; }
+    public int CustomerId { get; set; }
+    public int LoggedBy { get; set; }
+    public int Rating { get; set; } // CSAT score 1 to 5
+    public string Category { get; set; } = string.Empty;
+    public string StaffNotes { get; set; } = string.Empty;
+    public string Status { get; set; } = "Pending"; // "Pending", "Resolved", "Dismissed"
+    public DateTime DateLogged { get; set; } = DateTime.UtcNow;
+
+    // Decision attribution — populated only once Status leaves "Pending".
+    public int? DecidedBy { get; set; }
+    public DateTime? DecidedAt { get; set; }
+    public string? DecisionNotes { get; set; }
+
+    public virtual Customer? Customer { get; set; }
+    public virtual Employee? LoggedByEmployee { get; set; }
+    public virtual Employee? DecidedByEmployee { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Order.cs =====
+using System;
+using System.Collections.Generic;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Order : BaseEntity
+{
+    public int OrderId { get; set; }
+    public int CustomerId { get; set; }
+    public int CreatedBy { get; set; }
+    public decimal SubTotal { get; set; }
+    public decimal TotalDiscount { get; set; }
+    public decimal TotalAmount { get; set; } // Net spend after discounts
+    public int PointsEarned { get; set; }
+    public DateTime OrderDate { get; set; } = DateTime.UtcNow;
+    public string Status { get; set; } = "Pending";
+
+    public virtual Customer? Customer { get; set; }
+    public virtual Employee? Employee { get; set; }
+    public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+    public virtual ICollection<CampaignRedeem> CampaignRedeems { get; set; } = new List<CampaignRedeem>();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/OrderItem.cs =====
+using System.Collections.Generic;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class OrderItem
+{
+    public int OrderItemId { get; set; }
+    public int OrderId { get; set; }
+    public int ProductId { get; set; }
+    public int ProductSizeId { get; set; }
+    public string SizeNameSnapshot { get; set; } = string.Empty;
+    public decimal BaseSizePrice { get; set; }
+    public int Quantity { get; set; }
+
+    // Stored, not computed — TransactionController recalculates and assigns these whenever
+    // the line's quantity or modifiers change (UnitPrice = BaseSizePrice + sum of modifier
+    // prices; SubTotal = Quantity * UnitPrice).
+    public decimal UnitPrice { get; set; }
+    public decimal SubTotal { get; set; }
+
+    public virtual Order? Order { get; set; }
+    public virtual Product? Product { get; set; }
+    public virtual ProductSize? ProductSize { get; set; }
+    public virtual ICollection<OrderItemModifier> OrderItemModifiers { get; set; } = new List<OrderItemModifier>();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/OrderItemModifier.cs =====
+namespace CRM_Morcaffein.domain.entities;
+
+public class OrderItemModifier
+{
+    public int OrderItemModifierId { get; set; }
+    public int OrderItemId { get; set; }
+    public int ProductModifierId { get; set; }
+    public string ProductModifierNameSnapshot { get; set; } = string.Empty;
+    public decimal UnitPrice { get; set; }
+
+    public virtual OrderItem? OrderItem { get; set; }
+    public virtual ProductModifier? ProductModifier { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/PointAdjustmentRequest.cs =====
+using System;
+
+namespace CRM_Morcaffein.domain.entities;
+
+/// <summary>
+/// A manager-initiated request to manually add or deduct a customer's loyalty points,
+/// pending admin approval.
+/// </summary>
+public class PointAdjustmentRequest : BaseEntity
+{
+    public int PointAdjustmentRequestId { get; set; }
+    public int CustomerId { get; set; }
+    public int PointsChange { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public int RequestedBy { get; set; }
+    public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
+    public string Status { get; set; } = "Pending"; // "Pending", "Approved", "Rejected"
+    public int? ApprovedBy { get; set; }
+    public DateTime? DecidedAt { get; set; }
+    public string? DecisionNotes { get; set; }
+
+    public virtual Customer? Customer { get; set; }
+    public virtual Employee? Requester { get; set; }
+    public virtual Employee? Approver { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/PointLedger.cs =====
+using System;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class PointLedger : BaseEntity
+{
+    public int PointLedgerId { get; set; }
+    public int CustomerId { get; set; }
+    public int PointsChange { get; set; } // Positive for earned/adjusted, negative for redeemed
+    public string Type { get; set; } = string.Empty; // "Earned", "Redeemed", "Adjustment", "Expired"
+    public string Reason { get; set; } = string.Empty;
+    public int? OrderId { get; set; }
+    public int? PerformedBy { get; set; } // Employee who performed/approved this change, when applicable
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+
+    public virtual Customer? Customer { get; set; }
+    public virtual Order? Order { get; set; }
+    public virtual Employee? PerformedByEmployee { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/Product.cs =====
+using System.Collections.Generic;
+
+namespace CRM_Morcaffein.domain.entities;
+
+public class Product : BaseEntity
+{
+    public int ProductId { get; set; }
+    public string ProductCode { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public string ProductCategory { get; set; } = string.Empty;
+    public decimal BasePrice { get; set; }
+
+    public string? ImageUrl { get; set; }
+    public string? LocalImagePath { get; set; }
+
+    public bool IsAvailable { get; set; } = true;
+
+    public virtual ICollection<ProductSize> ProductSizes { get; set; } = new List<ProductSize>();
+    public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/ProductModifier.cs =====
+namespace CRM_Morcaffein.domain.entities;
+
+public class ProductModifier : BaseEntity
+{
+    public int ProductModifierId { get; set; }
+    public string Name { get; set; } = string.Empty; // e.g., "Extra Shot", "Oat Milk"
+    public string Category { get; set; } = string.Empty; // e.g., "Espresso", "Milk", "Syrups"
+    public decimal Price { get; set; } // e.g., 30.00
+}
+
+
+===== FILE: CRM_Morcaffein.domain/entities/ProductSize.cs =====
+namespace CRM_Morcaffein.domain.entities;
+
+public class ProductSize : BaseEntity
+{
+    public int ProductSizeId { get; set; }
+    public int ProductId { get; set; }
+    public string SizeName { get; set; } = string.Empty; // e.g., "Regular (16oz)", "Large (22oz)"
+    public decimal Price { get; set; }
+
+    public virtual Product? Product { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.infrastructure/data/TenantCrmDbContext.cs =====
+﻿using CRM_Morcaffein.domain.entities;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+
+namespace CRM_Morcaffein.infrastructure.data;
+
+public class TenantCrmDbContext : IdentityDbContext
+{
+    // ===== TENANT CRM DOMAIN TABLES =====
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductSize> ProductSizes => Set<ProductSize>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<Credential> Credentials => Set<Credential>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Campaign> Campaigns => Set<Campaign>();
+    public DbSet<CampaignRedeem> CampaignRedeems => Set<CampaignRedeem>();
+    public DbSet<Feedback> Feedbacks => Set<Feedback>();
+    public DbSet<PointLedger> PointLedgers => Set<PointLedger>();
+    public DbSet<ProductModifier> ProductModifiers => Set<ProductModifier>();
+    public DbSet<OrderItemModifier> OrderItemModifiers => Set<OrderItemModifier>();
+    public DbSet<PointAdjustmentRequest> PointAdjustmentRequests => Set<PointAdjustmentRequest>();
+
+    public TenantCrmDbContext(DbContextOptions<TenantCrmDbContext> options) : base(options)
+    { }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+        optionsBuilder.AddInterceptors(new AuditInterceptor());
+    }
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+
+        // 1. PRODUCT
+        builder.Entity<Product>(entity =>
+        {
+            entity.HasKey(p => p.ProductId);
+
+            entity.Property(p => p.ProductCode)
+                  .HasMaxLength(50)
+                  .IsRequired();
+
+            entity.Property(p => p.ProductName)
+                  .HasMaxLength(200)
+                  .IsRequired();
+
+            entity.Property(p => p.ImageUrl).HasMaxLength(500);
+            entity.Property(p => p.LocalImagePath).HasMaxLength(500);
+
+            entity.Property(p => p.BasePrice)
+                  .HasPrecision(18, 2);
+
+            entity.HasIndex(p => p.ProductCode)
+                  .IsUnique();
+        });
+
+        builder.Entity<ProductModifier>(entity =>
+        {
+            entity.HasKey(pm => pm.ProductModifierId);
+            entity.Property(pm => pm.Name).HasMaxLength(100).IsRequired();
+            entity.Property(pm => pm.Category).HasMaxLength(50);
+            entity.Property(pm => pm.Price).HasPrecision(18, 2);
+        });
+
+        builder.Entity<OrderItemModifier>(entity =>
+        {
+            entity.HasKey(oim => oim.OrderItemModifierId);
+            entity.Property(oim => oim.ProductModifierNameSnapshot).HasMaxLength(100);
+            entity.Property(oim => oim.UnitPrice).HasPrecision(18, 2);
+
+            entity.HasOne(oim => oim.OrderItem)
+                  .WithMany(oi => oi.OrderItemModifiers)
+                  .HasForeignKey(oim => oim.OrderItemId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(oim => oim.ProductModifier)
+                  .WithMany()
+                  .HasForeignKey(oim => oim.ProductModifierId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // 2. PRODUCT SIZE
+        builder.Entity<ProductSize>(entity =>
+        {
+            entity.HasKey(ps => ps.ProductSizeId);
+
+            entity.Property(ps => ps.SizeName)
+                  .HasMaxLength(50)
+                  .IsRequired();
+
+            entity.Property(ps => ps.Price)
+                  .HasPrecision(18, 2);
+
+            entity.HasOne(ps => ps.Product)
+                  .WithMany(p => p.ProductSizes)
+                  .HasForeignKey(ps => ps.ProductId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // 3. ORDER
+        builder.Entity<Order>(entity =>
+        {
+            entity.HasKey(o => o.OrderId);
+            entity.Property(o => o.SubTotal).HasPrecision(18, 2);
+            entity.Property(o => o.TotalDiscount).HasPrecision(18, 2);
+            entity.Property(o => o.TotalAmount).HasPrecision(18, 2);
+            entity.Property(o => o.PointsEarned).IsRequired();
+
+            entity.HasOne(o => o.Customer)
+                  .WithMany(c => c.Orders)
+                  .HasForeignKey(o => o.CustomerId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(o => o.Employee)
+                  .WithMany()
+                  .HasForeignKey(o => o.CreatedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // 4. ORDER ITEM
+        builder.Entity<OrderItem>(entity =>
+        {
+            entity.HasKey(oi => oi.OrderItemId);
+
+            // Stored Properties
+            entity.Property(oi => oi.BaseSizePrice).HasPrecision(18, 2);
+            entity.Property(oi => oi.SizeNameSnapshot).HasMaxLength(50);
+
+            // Dynamic Computed Properties (Not stored directly in DB table)
+            entity.Ignore(oi => oi.UnitPrice);
+            entity.Ignore(oi => oi.SubTotal);
+
+            // Relationships
+            entity.HasOne(oi => oi.Order)
+                  .WithMany(o => o.OrderItems)
+                  .HasForeignKey(oi => oi.OrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(oi => oi.Product)
+                  .WithMany(p => p.OrderItems)
+                  .HasForeignKey(oi => oi.ProductId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(oi => oi.ProductSize)
+                  .WithMany()
+                  .HasForeignKey(oi => oi.ProductSizeId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // 5. CAMPAIGN
+        builder.Entity<Campaign>(entity =>
+        {
+            entity.HasKey(c => c.CampaignId);
+            entity.Property(c => c.PromoName).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.PromoCategory).HasMaxLength(100).IsRequired();
+            entity.Property(c => c.DiscountValue).HasPrecision(18, 2);
+
+            entity.HasOne(c => c.Creator)
+                  .WithMany()
+                  .HasForeignKey(c => c.MadeBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Approver)
+                  .WithMany()
+                  .HasForeignKey(c => c.ApprovedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // 6. CAMPAIGN REDEEM
+        builder.Entity<CampaignRedeem>(entity =>
+        {
+            entity.HasKey(cr => cr.RedeemId);
+            entity.Property(cr => cr.DiscountUsed).HasPrecision(18, 2);
+
+            entity.HasOne(cr => cr.Campaign)
+                  .WithMany(c => c.CampaignRedeems)
+                  .HasForeignKey(cr => cr.CampaignId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(cr => cr.Order)
+                  .WithMany(o => o.CampaignRedeems)
+                  .HasForeignKey(cr => cr.OrderId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // 7. FEEDBACK
+        builder.Entity<Feedback>(entity =>
+        {
+            entity.HasKey(f => f.TicketId);
+            entity.Property(f => f.Category).HasMaxLength(100);
+            entity.Property(f => f.Status).HasMaxLength(50);
+            entity.Property(f => f.DecisionNotes).HasMaxLength(500);
+
+            entity.HasOne(f => f.Customer)
+                  .WithMany(c => c.Feedbacks)
+                  .HasForeignKey(f => f.CustomerId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(f => f.LoggedByEmployee)
+                  .WithMany()
+                  .HasForeignKey(f => f.LoggedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(f => f.DecidedByEmployee)
+                  .WithMany()
+                  .HasForeignKey(f => f.DecidedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // 8. POINT LEDGER
+        builder.Entity<PointLedger>(entity =>
+        {
+            entity.HasKey(pl => pl.PointLedgerId);
+            entity.Property(pl => pl.Type).HasMaxLength(50).IsRequired();
+            entity.Property(pl => pl.Reason).HasMaxLength(250);
+
+            entity.HasOne(pl => pl.Customer)
+                  .WithMany(c => c.PointLedgers)
+                  .HasForeignKey(pl => pl.CustomerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pl => pl.Order)
+                  .WithMany()
+                  .HasForeignKey(pl => pl.OrderId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(pl => pl.PerformedByEmployee)
+                  .WithMany()
+                  .HasForeignKey(pl => pl.PerformedBy)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // 9. POINT ADJUSTMENT REQUEST
+        builder.Entity<PointAdjustmentRequest>(entity =>
+        {
+            entity.HasKey(r => r.PointAdjustmentRequestId);
+            entity.Property(r => r.Reason).HasMaxLength(250).IsRequired();
+            entity.Property(r => r.Status).HasMaxLength(50).IsRequired();
+            entity.Property(r => r.DecisionNotes).HasMaxLength(250);
+
+            entity.HasOne(r => r.Customer)
+                  .WithMany(c => c.PointAdjustmentRequests)
+                  .HasForeignKey(r => r.CustomerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(r => r.Requester)
+                  .WithMany()
+                  .HasForeignKey(r => r.RequestedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.Approver)
+                  .WithMany()
+                  .HasForeignKey(r => r.ApprovedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+}
+
+===== FILE: CRM_Morcaffein/Theme/BrandPalette.cs =====
+using System.Drawing;
+
+namespace CRM_Morcaffein.Theme
+{
+    /// <summary>
+    /// Every color in the UI should come from this class or be a plain white/system neutral.
+    /// The brand roasted-coffee brown (#572400) — and tints/tones/shades of it — is the only
+    /// hue used for branding, primary actions, and content-area accents (see HeaderBackground,
+    /// ButtonPrimaryFill). Large chrome surfaces (the sidebar, in particular) are explicitly
+    /// allowed to lean on plain white/light-grey neutrals instead of brand tints for a lighter
+    /// feel — see the Nav* tokens below. Status/tier indicators are plain text with no color
+    /// coding at all for now (no blues/greens/reds/yellows anywhere).
+    /// </summary>
+    public static class BrandPalette
+    {
+        public static readonly Color Brand = ColorTranslator.FromHtml("#572400");
+
+        // --- Shades (brand mixed toward black) : darker, for pressed states / headers ---
+        public static readonly Color Shade10 = Shade(Brand, 0.10);
+        public static readonly Color Shade25 = Shade(Brand, 0.25);
+        public static readonly Color Shade45 = Shade(Brand, 0.45); // pressed button state
+
+        // --- Tints (brand mixed toward white) : lighter, for surfaces / hover / disabled ---
+        public static readonly Color Tint10 = Tint(Brand, 0.10);
+        public static readonly Color Tint25 = Tint(Brand, 0.25); // hover state
+        public static readonly Color Tint50 = Tint(Brand, 0.50);
+        public static readonly Color Tint75 = Tint(Brand, 0.75); // subtle card background
+        public static readonly Color Tint85 = Tint(Brand, 0.85); // sidebar chrome — a step darker than the page background
+        public static readonly Color Tint90 = Tint(Brand, 0.90); // page background
+        public static readonly Color Tint95 = Tint(Brand, 0.95); // near-white panel background
+
+        // --- Tones (brand mixed toward mid-grey) : muted, for borders / disabled fills ---
+        public static readonly Color Tone35 = Tone(Brand, 0.35);
+        public static readonly Color Tone60 = Tone(Brand, 0.60); // disabled control fill
+        public static readonly Color Tone80 = Tone(Brand, 0.80); // divider lines
+
+        // --- Neutrals: white/black and brand-mixed greys only ---
+        public static readonly Color White = Color.White;
+        public static readonly Color Black = Color.Black;
+        public static readonly Color NeutralText = Shade(Brand, 0.55);   // body text (brand-tinted near-black)
+        public static readonly Color NeutralTextMuted = Tone(Brand, 0.45); // secondary text
+
+        // --- Semantic roles, expressed via VALUE not hue ---
+        public static Color SurfacePrimary => White;
+        public static Color SurfaceSecondary => Tint95;
+        public static Color SurfaceCard => Tint90;
+        public static Color Border => Tone80;
+
+        // Table headers: a light, brand-tinted band with dark text — not a full-brand fill.
+        // The main color stays reserved for primary actions (buttons) so it doesn't compete
+        // for attention across every grid in the app. Swapped with RowSelected below: the
+        // header now takes the stronger of the two tints, so it stands out over a selected row.
+        public static Color HeaderBackground => Tint50;
+        public static Color HeaderText => NeutralText;
+
+        // Selected row highlight — was the header's tint, now the lighter one.
+        public static Color RowSelected => Tint90;
+
+        public static Color ButtonPrimaryFill => Brand;
+        public static Color ButtonPrimaryHover => Shade10;
+        public static Color ButtonPrimaryPressed => Shade25;
+        public static Color ButtonPrimaryText => White;
+
+        public static Color ButtonSecondaryFill => Tint75;
+        public static Color ButtonSecondaryHover => Tint50;
+        public static Color ButtonSecondaryText => Shade(Brand, 0.30);
+
+        // Plain neutral grey — deliberately NOT a tint/shade of the brand color, so a
+        // disabled button reads as "off" rather than as a duller version of the same action.
+        public static Color ButtonDisabledFill => Tone80;
+        public static Color ButtonDisabledText => Tone35;
+
+        // "Positive" state (points earned, resolved feedback, success) -> lightest fill, dark text
+        public static Color StatusPositiveFill => Tint75;
+        public static Color StatusPositiveText => Shade25;
+
+        // "Attention" state (low stock, pending feedback, warnings) -> mid-tone, bolder text
+        public static Color StatusAttentionFill => Tint50;
+        public static Color StatusAttentionText => Shade45;
+
+        // "Negative" state (dismissed, locked account, errors) -> darkest shade, high contrast text
+        public static Color StatusNegativeFill => Shade25;
+        public static Color StatusNegativeText => White;
+
+        // --- Sidebar/nav chrome: a distinct step in tone from both the content background
+        // (Tint95) and the table/card surfaces (White), so the sidebar reads as its own
+        // region rather than blending into whatever's next to it. ---
+        public static Color NavBackground => Tint85;
+        public static Color NavFooterBackground => Tint75;
+        public static Color NavText => NeutralTextMuted;
+        public static Color NavActiveBackground => White;
+        public static Color NavActiveText => Brand;
+        public static Color NavHoverBackground => Color.White;
+
+        // Unfilled star rating — Border (Tone80) reads too faint against white; Tone35 keeps
+        // the same neutral hue family but with enough contrast to actually see the outline.
+        public static Color RatingInactive => Tone35;
+
+        // --- Top bar: thin brand strip above the content/sidebar (icon mark + tab name) ---
+        public static Color TopBarBackground => White;
+        public static Color TopBarBorder => Border;
+
+        public static Font BrandFontRegular(float size) => TryCreateFont("Bahnschrift SemiLight", size, FontStyle.Regular);
+        public static Font BrandFontBold(float size) => TryCreateFont("Bahnschrift SemiBold", size, FontStyle.Bold);
+
+        private static Font TryCreateFont(string family, float size, FontStyle style)
+        {
+            try
+            {
+                return new Font(family, size, style);
+            }
+            catch
+            {
+                // Falls back gracefully if the custom font isn't installed on a given machine.
+                return new Font(FontFamily.GenericSansSerif, size, style);
+            }
+        }
+
+        private static Color Tint(Color c, double amount) => Mix(c, Color.White, amount);
+        private static Color Shade(Color c, double amount) => Mix(c, Color.Black, amount);
+
+        // "Tone" = mix toward a neutral mid-grey derived from the brand itself, for muted/disabled elements.
+        private static Color Tone(Color c, double amount)
+        {
+            var grey = Mix(c, Color.Black, 0.5);
+            grey = Mix(grey, Color.White, 0.5);
+            return Mix(c, grey, amount);
+        }
+
+        private static Color Mix(Color a, Color b, double amount)
+        {
+            amount = Math.Clamp(amount, 0.0, 1.0);
+            int r = (int)Math.Round(a.R + (b.R - a.R) * amount);
+            int g = (int)Math.Round(a.G + (b.G - a.G) * amount);
+            int bl = (int)Math.Round(a.B + (b.B - a.B) * amount);
+            return Color.FromArgb(255, r, g, bl);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Theme/ButtonStyler.cs =====
+namespace CRM_Morcaffein.Theme
+{
+    /// <summary>
+    /// FlatStyle.Flat buttons don't repaint their fill when Enabled flips false — they just
+    /// grey the text and keep whatever BackColor was set, so a disabled primary button still
+    /// looks like a brand-colored, seemingly-clickable button. Call TrackEnabledState once
+    /// (after the button's "active" colors are set) on any button whose Enabled is toggled at
+    /// runtime, and it'll swap to the neutral disabled palette automatically.
+    /// </summary>
+    public static class ButtonStyler
+    {
+        public static void TrackEnabledState(Button button)
+        {
+            var activeBackColor = button.BackColor;
+            var activeForeColor = button.ForeColor;
+
+            void Apply()
+            {
+                button.BackColor = button.Enabled ? activeBackColor : BrandPalette.ButtonDisabledFill;
+                button.ForeColor = button.Enabled ? activeForeColor : BrandPalette.ButtonDisabledText;
+            }
+
+            button.EnabledChanged += (s, e) => Apply();
+            Apply(); // the button may already be disabled at hook-up time (e.g. designer default)
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Session/EmployeeSession.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Session
+{
+    /// <summary>
+    /// Nothing like this existed anywhere in the codebase yet. Order.CreatedBy,
+    /// Feedback.LoggedBy, and Campaign.MadeBy/ApprovedBy all need "who is currently
+    /// logged in" — this is the single source of truth for that, set once by FrmLogin
+    /// on a successful Credential.VerifyPassword(...), and read by every downstream
+    /// ViewModel via the static Current instance for the lifetime of the app process.
+    /// </summary>
+    public sealed class EmployeeSession
+    {
+        public static EmployeeSession? Current { get; private set; }
+
+        public Employee Employee { get; }
+
+        private EmployeeSession(Employee employee)
+        {
+            Employee = employee;
+        }
+
+        public static EmployeeSession Start(Employee employee)
+        {
+            Current = new EmployeeSession(employee);
+            return Current;
+        }
+
+        public static void End() => Current = null;
+
+        public int EmployeeId => Employee.EmployeeId;
+        public string DisplayName => Employee.FullName;
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Controllers/CustomerController.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services;
+using CRM_Morcaffein.Session;
+
+namespace CRM_Morcaffein.Controllers
+{
+    /// <summary>
+    /// Controller for the Customers tab (MVC): search/register customers, plus the profile
+    /// drawer's order history / points ledger / point-adjustment request-and-approve
+    /// workflow. Owns all the validation and business rules for that feature area — the
+    /// Model (Customer, PointAdjustmentRequest, PointLedger) is plain data, and
+    /// ICustomerService/IPointAdjustmentService are pure persistence with no rules of
+    /// their own. Absorbs what used to be three ViewModels (CustomersViewModel,
+    /// CustomerProfileViewModel, CustomerOnboardingViewModel).
+    ///
+    /// Point overrides are manager-requests / admin-approves, not an instant staff-side
+    /// override — CanRequestAdjustment/CanApprove gate the two halves based on
+    /// EmployeeSession.Current's role.
+    /// </summary>
+    public class CustomerController
+    {
+        private readonly ICustomerService _customerService;
+        private readonly IPointAdjustmentService _pointAdjustmentService;
+
+        public CustomerController(ICustomerService customerService, IPointAdjustmentService pointAdjustmentService)
+        {
+            _customerService = customerService;
+            _pointAdjustmentService = pointAdjustmentService;
+        }
+
+        public bool CanRequestAdjustment => IsManager(EmployeeSession.Current?.Employee);
+        public bool CanApprove => IsAdmin(EmployeeSession.Current?.Employee);
+
+        /// <summary>Tier is a business rule (point thresholds), not stored data — computed here, not on Customer.</summary>
+        public static string GetTier(int pointsBalance) => pointsBalance switch
+        {
+            >= 500 => "Gold",
+            >= 200 => "Silver",
+            _ => "Regular",
+        };
+
+        public static bool IsManager(Employee? employee) =>
+            employee != null && (
+                employee.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
+                employee.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                employee.Role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+
+        public static bool IsAdmin(Employee? employee) =>
+            employee != null && (
+                employee.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                employee.Role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase));
+
+        public IReadOnlyList<Customer> Search(string searchText) => _customerService.Search(searchText);
+
+        public Customer Register(string firstName, string lastName, string phone, string? email, DateTime? birthday)
+        {
+            if (string.IsNullOrWhiteSpace(firstName))
+                throw new ArgumentException("First name is required.");
+            if (string.IsNullOrWhiteSpace(lastName))
+                throw new ArgumentException("Last name is required.");
+
+            var cleanedPhone = new string(phone.Where(char.IsDigit).ToArray());
+            if (cleanedPhone.Length < 10)
+                throw new ArgumentException("Contact number must have at least 10 digits.");
+
+            var cleanedEmail = string.Empty;
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                if (!email.Contains('@') || !email.Contains('.'))
+                    throw new ArgumentException("Invalid email format.");
+                cleanedEmail = email.Trim().ToLower();
+            }
+
+            var customer = new Customer
+            {
+                FirstName = firstName.Trim(),
+                LastName = lastName.Trim(),
+                ContactNumber = cleanedPhone,
+                Email = cleanedEmail,
+                Birthday = birthday,
+                LastVisitDate = DateTime.UtcNow,
+            };
+
+            return _customerService.Save(customer);
+        }
+
+        public IReadOnlyList<Order> GetOrderHistory(int customerId) => _customerService.GetOrderHistory(customerId);
+
+        public IReadOnlyList<PointLedger> GetLedger(int customerId) => _customerService.GetLedger(customerId);
+
+        /// <summary>
+        /// Only Pending requests — an Approved one already landed in the ledger above, a
+        /// Rejected one has nothing further to act on, so the drawer only ever shows
+        /// actionable rows.
+        /// </summary>
+        public IReadOnlyList<PointAdjustmentRequest> GetPendingAdjustmentRequests(int customerId) =>
+            _pointAdjustmentService.GetForCustomer(customerId).Where(r => r.Status == "Pending").ToList();
+
+        public void RequestAdjustment(int customerId, int amount, string reason, int requestedByEmployeeId)
+        {
+            if (!CanRequestAdjustment)
+                throw new InvalidOperationException("Only managers (or above) can request a point adjustment.");
+            if (amount == 0)
+                throw new ArgumentException("Points change cannot be zero.");
+            if (string.IsNullOrWhiteSpace(reason))
+                throw new ArgumentException("A reason is required.");
+
+            var request = new PointAdjustmentRequest
+            {
+                CustomerId = customerId,
+                PointsChange = amount,
+                Reason = reason.Trim(),
+                RequestedBy = requestedByEmployeeId,
+            };
+
+            _pointAdjustmentService.Save(request);
+        }
+
+        public void ApproveAdjustment(int requestId, int approvedByEmployeeId)
+        {
+            if (!CanApprove)
+                throw new InvalidOperationException("Only admins can approve point adjustment requests.");
+
+            var request = _pointAdjustmentService.GetById(requestId);
+            if (!request.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"This request has already been {request.Status}.");
+            if (approvedByEmployeeId == request.RequestedBy)
+                throw new InvalidOperationException("An employee cannot approve their own adjustment request.");
+
+            var customer = _customerService.GetById(request.CustomerId);
+            var newBalance = customer.PointsBalance + request.PointsChange;
+            if (newBalance < 0)
+                throw new InvalidOperationException("Adjustment would result in a negative points balance.");
+
+            customer.PointsBalance = newBalance;
+            customer.LastVisitDate = DateTime.UtcNow;
+            _customerService.AddLedgerEntry(new PointLedger
+            {
+                CustomerId = customer.CustomerId,
+                PointsChange = request.PointsChange,
+                Type = "Adjustment",
+                Reason = request.Reason,
+                PerformedBy = approvedByEmployeeId,
+            });
+
+            request.Status = "Approved";
+            request.ApprovedBy = approvedByEmployeeId;
+            request.DecidedAt = DateTime.UtcNow;
+            _pointAdjustmentService.Save(request);
+        }
+
+        public void RejectAdjustment(int requestId, int decidedByEmployeeId, string notes)
+        {
+            if (!CanApprove)
+                throw new InvalidOperationException("Only admins can reject point adjustment requests.");
+            if (string.IsNullOrWhiteSpace(notes))
+                throw new ArgumentException("A rejection reason is required.");
+
+            var request = _pointAdjustmentService.GetById(requestId);
+            if (!request.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"This request has already been {request.Status}.");
+
+            request.Status = "Rejected";
+            request.ApprovedBy = decidedByEmployeeId;
+            request.DecidedAt = DateTime.UtcNow;
+            request.DecisionNotes = notes.Trim();
+            _pointAdjustmentService.Save(request);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Controllers/FeedbackController.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services;
+
+namespace CRM_Morcaffein.Controllers
+{
+    /// <summary>
+    /// Controller for the Feedback tab (MVC): mediates between the View
+    /// (FeedbackManagementView / FrmLogFeedback) and the Model (Feedback/Customer domain
+    /// entities, reached through IFeedbackService/ICustomerService). Deliberately plain
+    /// request-in/result-out methods — no bindable properties, no command objects. The
+    /// View calls a method, gets a value back, and updates its own controls with it.
+    ///
+    /// Absorbs what used to be three separate ViewModels (FeedbackViewModel,
+    /// FeedbackDetailViewModel, LogFeedbackViewModel) — the ticket list, the ticket detail,
+    /// and the log-feedback modal are all one feature area, so they're one Controller.
+    /// </summary>
+    public class FeedbackController
+    {
+        private readonly IFeedbackService _feedbackService;
+        private readonly ICustomerService _customerService;
+
+        public FeedbackController(IFeedbackService feedbackService, ICustomerService customerService)
+        {
+            _feedbackService = feedbackService;
+            _customerService = customerService;
+        }
+
+        /// <summary>
+        /// Every ticket ever logged, optionally filtered by customer name, category,
+        /// status, or exact ticket ID. Empty/whitespace search returns everything.
+        /// </summary>
+        public IReadOnlyList<Feedback> GetTickets(string searchText)
+        {
+            var all = _feedbackService.GetAll();
+
+            if (string.IsNullOrWhiteSpace(searchText))
+                return all;
+
+            return all.Where(t =>
+                (t.Customer?.FullName.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                t.Category.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                t.Status.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                t.TicketId.ToString() == searchText.Trim())
+                .ToList();
+        }
+
+        /// <summary>Customers matching the query, for the Log Feedback modal's customer picker.</summary>
+        public IReadOnlyList<Customer> SearchCustomers(string query) => _customerService.Search(query);
+
+        /// <summary>
+        /// Logs a new ticket. Validation (rating range, required IDs) lives here since
+        /// Feedback is plain data now — throws on bad input, which the View is expected to
+        /// catch and display.
+        /// </summary>
+        public Feedback LogFeedback(int customerId, int loggedByEmployeeId, int rating, string category, string staffNotes)
+        {
+            if (customerId <= 0) throw new ArgumentException("Customer ID is required.");
+            if (loggedByEmployeeId <= 0) throw new ArgumentException("Employee ID is required.");
+            if (rating < 1 || rating > 5) throw new ArgumentOutOfRangeException(nameof(rating), "Rating must be between 1 and 5 stars.");
+
+            var feedback = new Feedback
+            {
+                CustomerId = customerId,
+                LoggedBy = loggedByEmployeeId,
+                Rating = rating,
+                Category = category,
+                StaffNotes = staffNotes.Trim(),
+            };
+
+            return _feedbackService.Save(feedback);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Controllers/TransactionController.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services;
+
+namespace CRM_Morcaffein.Controllers
+{
+    /// <summary>
+    /// Controller for the Transactions/POS tab (MVC). One instance represents a single
+    /// in-progress sale for one customer, created when the View's customer search finds
+    /// someone. Owns every business rule for the cart/promo/checkout flow — cart-item
+    /// pricing, discount calculation, promo eligibility, points-earned math — since Order/
+    /// OrderItem/Campaign/CampaignRedeem are plain data and IOrderService/ICampaignService/
+    /// ICustomerService are pure persistence with no rules of their own.
+    ///
+    /// Order/Customer are exposed directly (read-only) — the View reads Model state off the
+    /// Controller after each call, same as any MVC Controller exposing the Model it just
+    /// updated.
+    /// </summary>
+    public class TransactionController
+    {
+        private readonly IOrderService _orderService;
+        private readonly IProductCatalogService _catalogService;
+        private readonly ICampaignService _campaignService;
+        private readonly ICustomerService _customerService;
+
+        public Order Order { get; private set; }
+        public Customer Customer { get; private set; }
+
+        public IReadOnlyList<string> Categories { get; }
+
+        public decimal SubTotal => Order.SubTotal;
+        public decimal TotalDiscount => Order.TotalDiscount;
+        public decimal TotalAmount => Order.TotalAmount;
+        public bool HasItems => Order.OrderItems.Count > 0;
+        public IReadOnlyList<OrderItem> CartItems => Order.OrderItems.ToList();
+
+        public TransactionController(
+            IOrderService orderService,
+            IProductCatalogService catalogService,
+            ICampaignService campaignService,
+            ICustomerService customerService,
+            Customer customer,
+            int createdByEmployeeId)
+        {
+            _orderService = orderService;
+            _catalogService = catalogService;
+            _campaignService = campaignService;
+            _customerService = customerService;
+            Customer = customer;
+            Order = _orderService.StartOrder(customer.CustomerId, createdByEmployeeId);
+            Categories = _catalogService.GetCategories();
+        }
+
+        /// <summary>
+        /// Re-points the SAME in-progress order at a different customer (Quick Register
+        /// relink flow). Not used by the main POS flow — search-and-Go there starts a fresh
+        /// Controller/Order instead (see TransactionView.SelectCustomer).
+        /// </summary>
+        public void SwitchCustomer(Customer newCustomer)
+        {
+            Order = _orderService.LinkCustomerToOrder(Order, newCustomer);
+            Customer = newCustomer;
+        }
+
+        public IReadOnlyList<Product> GetProducts(string category, string searchText)
+        {
+            IEnumerable<Product> products = string.IsNullOrEmpty(category)
+                ? _catalogService.GetProducts()
+                : _catalogService.GetByCategory(category);
+
+            if (!string.IsNullOrWhiteSpace(searchText))
+                products = products.Where(p => p.ProductName.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+
+            return products.ToList();
+        }
+
+        public IReadOnlyList<ProductModifier> GetModifiers() => _catalogService.GetModifiers();
+
+        public void AddItemToCart(Product product, ProductSize size, int quantity, IEnumerable<ProductModifier> modifiers)
+        {
+            EnsurePending();
+            if (quantity <= 0)
+                throw new ArgumentException("Quantity must be greater than zero.");
+
+            var existing = Order.OrderItems.FirstOrDefault(i => i.ProductSizeId == size.ProductSizeId);
+            if (existing != null)
+            {
+                existing.Quantity += quantity;
+                RecalculateItemPricing(existing);
+            }
+            else
+            {
+                var item = _orderService.CreateOrderItem(Order, product, size, quantity);
+                foreach (var modifier in modifiers)
+                    _orderService.AddModifierToItem(item, modifier);
+                RecalculateItemPricing(item);
+            }
+
+            RecalculateOrderTotals();
+        }
+
+        public void UpdateCartItem(OrderItem item, ProductSize newSize, int newQuantity, IEnumerable<ProductModifier> newModifiers)
+        {
+            EnsurePending();
+            if (newQuantity <= 0)
+                throw new ArgumentException("Quantity must be greater than zero.");
+
+            if (item.ProductSizeId == newSize.ProductSizeId)
+            {
+                item.Quantity = newQuantity;
+                item.OrderItemModifiers.Clear();
+                foreach (var modifier in newModifiers)
+                    _orderService.AddModifierToItem(item, modifier);
+                RecalculateItemPricing(item);
+                RecalculateOrderTotals();
+            }
+            else
+            {
+                // No "change size in place" operation — drop the old line, add a fresh one.
+                _orderService.RemoveOrderItem(Order, item);
+                AddItemToCart(item.Product!, newSize, newQuantity, newModifiers); // recalculates totals itself
+            }
+        }
+
+        public void RemoveItem(OrderItem item)
+        {
+            _orderService.RemoveOrderItem(Order, item);
+            RecalculateOrderTotals();
+        }
+
+        public IReadOnlyList<Campaign> GetEligiblePromos() =>
+            _campaignService.GetActiveCampaigns().Where(c => CanRedeem(c, Customer, Order)).ToList();
+
+        public void ApplyPromo(Campaign campaign)
+        {
+            EnsurePending();
+            var discount = CalculateDiscount(campaign, Order.SubTotal);
+            _orderService.CreateCampaignRedeem(Order, campaign, discount);
+            RecalculateOrderTotals();
+        }
+
+        public void RemovePromo(Campaign campaign)
+        {
+            var redeem = Order.CampaignRedeems.FirstOrDefault(r => r.CampaignId == campaign.CampaignId);
+            if (redeem is null) return;
+
+            _orderService.RemoveCampaignRedeem(Order, redeem);
+            RecalculateOrderTotals();
+        }
+
+        /// <summary>Clears every applied promo, looking each one up by ID so it works even if a campaign has since become ineligible.</summary>
+        public void ClearPromos()
+        {
+            foreach (var redeem in Order.CampaignRedeems.ToList())
+                _orderService.RemoveCampaignRedeem(Order, redeem);
+
+            RecalculateOrderTotals();
+        }
+
+        public Order CompleteSale()
+        {
+            EnsurePending();
+            if (Order.OrderItems.Count == 0)
+                throw new InvalidOperationException("Order cannot be empty.");
+
+            Order.Status = "Completed";
+            Order.PointsEarned = (int)(Order.TotalAmount / 10m); // 1 point per ₱10 spent, net of discounts
+
+            if (Order.PointsEarned > 0)
+            {
+                Customer.PointsBalance += Order.PointsEarned;
+                Customer.LastVisitDate = DateTime.UtcNow;
+                _customerService.AddLedgerEntry(new PointLedger
+                {
+                    CustomerId = Customer.CustomerId,
+                    PointsChange = Order.PointsEarned,
+                    Type = "Earned",
+                    Reason = $"Order #{Order.OrderId} Spend",
+                    OrderId = Order.OrderId,
+                });
+            }
+
+            _orderService.CompleteOrder(Order);
+            return Order;
+        }
+
+        // =====================================================================
+        // BUSINESS RULES (previously lived on Order/Campaign/CampaignRedeem —
+        // moved here since the domain entities are plain data now)
+        // =====================================================================
+
+        private void EnsurePending()
+        {
+            if (!Order.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Order cannot be modified in '{Order.Status}' state.");
+        }
+
+        private static void RecalculateItemPricing(OrderItem item)
+        {
+            item.UnitPrice = item.BaseSizePrice + item.OrderItemModifiers.Sum(m => m.UnitPrice);
+            item.SubTotal = item.Quantity * item.UnitPrice;
+        }
+
+        /// <summary>
+        /// Re-evaluates each applied campaign against the CURRENT SubTotal rather than a
+        /// frozen snapshot — a percentage promo applied to a ₱100 cart shouldn't stay
+        /// frozen at its ₱10 discount once the cart grows to ₱200.
+        /// </summary>
+        private void RecalculateOrderTotals()
+        {
+            Order.SubTotal = Order.OrderItems.Sum(i => i.SubTotal);
+
+            decimal totalDiscount = 0m;
+            foreach (var redeem in Order.CampaignRedeems)
+            {
+                var campaign = redeem.Campaign ?? _campaignService.GetById(redeem.CampaignId);
+                var discount = campaign != null ? CalculateDiscount(campaign, Order.SubTotal) : redeem.DiscountUsed;
+                redeem.DiscountUsed = discount;
+                totalDiscount += discount;
+            }
+            Order.TotalDiscount = totalDiscount;
+
+            Order.TotalAmount = Math.Max(0m, Order.SubTotal - Order.TotalDiscount);
+        }
+
+        private static bool IsCurrentlyActive(Campaign campaign)
+        {
+            var now = DateTime.UtcNow;
+            return campaign.IsActive && now >= campaign.StartDate && now <= campaign.EndDate;
+        }
+
+        private static bool CanRedeem(Campaign campaign, Customer customer, Order order)
+        {
+            if (!IsCurrentlyActive(campaign)) return false;
+
+            if (campaign.MinPurchaseAmount.HasValue && order.SubTotal < campaign.MinPurchaseAmount.Value)
+                return false;
+
+            if (!campaign.TargetTier.Equals("All", StringComparison.OrdinalIgnoreCase) &&
+                !CustomerController.GetTier(customer.PointsBalance).Equals(campaign.TargetTier, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (campaign.PromoCategory.Equals("Birthday", StringComparison.OrdinalIgnoreCase) && !IsBirthdayToday(customer))
+                return false;
+
+            if (campaign.PromoCategory.Equals("Inactive", StringComparison.OrdinalIgnoreCase) && !IsInactive(customer))
+                return false;
+
+            var previousRedemptions = campaign.CampaignRedeems.Count(r => r.Order != null && r.Order.CustomerId == customer.CustomerId);
+            return previousRedemptions < campaign.MaxRedemptionsPerCustomer;
+        }
+
+        private static bool IsBirthdayToday(Customer customer) =>
+            customer.Birthday?.Month == DateTime.UtcNow.Month && customer.Birthday?.Day == DateTime.UtcNow.Day;
+
+        private static bool IsInactive(Customer customer) => (DateTime.UtcNow - customer.LastVisitDate).Days > 20;
+
+        private static decimal CalculateDiscount(Campaign campaign, decimal orderTotal)
+        {
+            if (orderTotal <= 0) return 0m;
+            if (campaign.MinPurchaseAmount.HasValue && orderTotal < campaign.MinPurchaseAmount.Value) return 0m;
+
+            decimal discount;
+            if (campaign.DiscountType.Equals("Percentage", StringComparison.OrdinalIgnoreCase))
+            {
+                discount = orderTotal * (campaign.DiscountValue / 100m);
+                if (campaign.MaxDiscountAmount.HasValue && discount > campaign.MaxDiscountAmount.Value)
+                    discount = campaign.MaxDiscountAmount.Value;
+            }
+            else
+            {
+                discount = campaign.DiscountValue;
+            }
+
+            return discount > orderTotal ? orderTotal : discount;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/ICampaignService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services
+{
+    /// <summary>
+    /// Pure data access. Which campaigns are actually eligible for a given customer/order
+    /// (tier, min spend, birthday, redemption count) and how much discount one is worth are
+    /// business rules that live in TransactionController, not here — this only returns the
+    /// raw pool of currently-active campaigns for the Controller to filter.
+    /// </summary>
+    public interface ICampaignService
+    {
+        /// <summary>Campaigns that are IsActive and within their Start/End date range.</summary>
+        IReadOnlyList<Campaign> GetActiveCampaigns();
+
+        Campaign? GetById(int campaignId);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/ICustomerService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services
+{
+    /// <summary>
+    /// Pure data access — no validation, no business rules. CustomerController validates
+    /// input and decides what to do; this just persists/queries whatever it's handed.
+    /// </summary>
+    public interface ICustomerService
+    {
+        Customer? FindByPhoneOrId(string query);
+
+        IReadOnlyList<Customer> Search(string query);
+
+        Customer GetById(int customerId);
+
+        /// <summary>Assigns a new ID and adds it to the store if CustomerId is still 0; otherwise a no-op (the in-memory object is already tracked).</summary>
+        Customer Save(Customer customer);
+
+        IReadOnlyList<PointLedger> GetLedger(int customerId);
+
+        IReadOnlyList<Order> GetOrderHistory(int customerId);
+
+        IReadOnlyList<Customer> GetAll();
+
+        /// <summary>Assigns a new ID and appends the entry to the customer's ledger.</summary>
+        void AddLedgerEntry(PointLedger entry);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/IFeedbackService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services
+{
+    /// <summary>Pure data access — validation (rating range, required fields) lives in FeedbackController.</summary>
+    public interface IFeedbackService
+    {
+        /// <summary>Assigns a new TicketId and adds it to the store if TicketId is still 0.</summary>
+        Feedback Save(Feedback feedback);
+
+        IReadOnlyList<Feedback> GetForCustomer(int customerId);
+
+        /// <summary>All tickets across all customers, newest first — backs the Feedback tab's main grid.</summary>
+        IReadOnlyList<Feedback> GetAll();
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/IOrderService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services
+{
+    /// <summary>
+    /// Pure data access — no validation, no business rules (cart math, discount calculation,
+    /// eligibility, points-earned). TransactionController owns all of that; this just
+    /// assigns IDs and adds/removes items from the in-memory collections it's handed.
+    /// </summary>
+    public interface IOrderService
+    {
+        Order StartOrder(int customerId, int createdByEmployeeId);
+
+        /// <summary>Re-points an already-open order at a different customer (Quick Register relink flow).</summary>
+        Order LinkCustomerToOrder(Order order, Customer customer);
+
+        /// <summary>Assigns a new OrderItemId, adds it to order.OrderItems, and returns it. Caller computes UnitPrice/SubTotal.</summary>
+        OrderItem CreateOrderItem(Order order, Product product, ProductSize size, int quantity);
+
+        /// <summary>Assigns a new OrderItemModifierId and adds it to item.OrderItemModifiers.</summary>
+        OrderItemModifier AddModifierToItem(OrderItem item, ProductModifier modifier);
+
+        void RemoveOrderItem(Order order, OrderItem item);
+
+        /// <summary>Assigns a new RedeemId and adds it to order.CampaignRedeems. Caller computes the discount amount.</summary>
+        CampaignRedeem CreateCampaignRedeem(Order order, Campaign campaign, decimal discountAmount);
+
+        void RemoveCampaignRedeem(Order order, CampaignRedeem redeem);
+
+        /// <summary>Persists the order in its finished state — Status/PointsEarned are already set by the caller.</summary>
+        void CompleteOrder(Order order);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/IPointAdjustmentService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services
+{
+    /// <summary>
+    /// Pure data access — the manager-requests/admin-approves rules (role checks, self-
+    /// approval block, pending-state checks) live in CustomerController, not here.
+    /// </summary>
+    public interface IPointAdjustmentService
+    {
+        /// <summary>Assigns a new PointAdjustmentRequestId and adds it to the store if the ID is still 0; otherwise resolves the Approver nav property.</summary>
+        PointAdjustmentRequest Save(PointAdjustmentRequest request);
+
+        PointAdjustmentRequest GetById(int requestId);
+
+        IReadOnlyList<PointAdjustmentRequest> GetForCustomer(int customerId);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/IProductCatalogService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services
+{
+    public interface IProductCatalogService
+    {
+        IReadOnlyList<string> GetCategories();
+
+        IReadOnlyList<Product> GetProducts();
+
+        IReadOnlyList<Product> GetByCategory(string category);
+
+        Product GetById(int productId);
+
+        IReadOnlyList<ProductModifier> GetModifiers();
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/ServiceRegistry.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services.Mock;
+
+namespace CRM_Morcaffein.Services
+{
+    /// <summary>
+    /// Composition root for the demo/mock build — no DI container is wired up yet. One
+    /// shared MockDataStore backs every service so state (a customer's points, an
+    /// in-progress cart, seeded products) stays consistent across the whole app for a
+    /// single run. Forms and ViewModels should pull services from here rather than
+    /// `new`-ing Mock*Service directly, so everything shares the same store instance.
+    ///
+    /// When the real EF Core-backed services are ready, swap the right-hand side of each
+    /// property (and delete the Mock* classes) — nothing outside this file should need to
+    /// change, since everything else depends only on the I*Service interfaces.
+    /// </summary>
+    public static class ServiceRegistry
+    {
+        private static readonly MockDataStore _store = new();
+
+        public static ICustomerService Customers { get; } = new MockCustomerService(_store);
+        public static IProductCatalogService Products { get; } = new MockProductCatalogService(_store);
+        public static IOrderService Orders { get; } = new MockOrderService(_store);
+        public static IFeedbackService Feedback { get; } = new MockFeedbackService(_store);
+        public static ICampaignService Campaigns { get; } = new MockCampaignService(_store);
+        public static IPointAdjustmentService PointAdjustments { get; } = new MockPointAdjustmentService(_store);
+
+        /// <summary>
+        /// Placeholder for "the currently logged in employee" until FrmLogin/auth is wired
+        /// up — FrmMain seeds EmployeeSession.Current from this so the sidebar's account
+        /// footer (and any future Order.CreatedBy/Feedback.LoggedBy calls) have a real
+        /// employee to attribute to. Delete this once real login sets EmployeeSession.Current
+        /// itself.
+        ///
+        /// Seeded as the Manager account rather than the first employee: this app is the
+        /// Staff/Manager console, not an admin console, so approve/reject on a point
+        /// adjustment request should never show up here regardless of who's "logged in" —
+        /// only the request side (a Manager) should ever be true for a session this app
+        /// creates. Admin-side approval is a different, not-yet-built surface. (Role checks
+        /// live in CustomerController now, not on Employee — seed data has exactly one
+        /// Manager, so matching the role string directly is unambiguous here.)
+        /// </summary>
+        public static Employee PlaceholderStaffAccount =>
+            _store.Employees.First(e => e.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase));
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockCampaignService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    public class MockCampaignService : ICampaignService
+    {
+        private readonly MockDataStore _store;
+
+        public MockCampaignService(MockDataStore store) => _store = store;
+
+        public IReadOnlyList<Campaign> GetActiveCampaigns()
+        {
+            var now = DateTime.UtcNow;
+            return _store.Campaigns
+                .Where(c => c.IsActive && now >= c.StartDate && now <= c.EndDate)
+                .ToList();
+        }
+
+        public Campaign? GetById(int campaignId) =>
+            _store.Campaigns.FirstOrDefault(c => c.CampaignId == campaignId);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockCustomerService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    public class MockCustomerService : ICustomerService
+    {
+        private readonly MockDataStore _store;
+
+        public MockCustomerService(MockDataStore store) => _store = store;
+
+        public Customer? FindByPhoneOrId(string query)
+        {
+            query = query.Trim();
+            if (int.TryParse(query, out var id))
+            {
+                var byId = _store.Customers.FirstOrDefault(c => c.CustomerId == id);
+                if (byId != null) return byId;
+            }
+
+            var digitsOnly = new string(query.Where(char.IsDigit).ToArray());
+            if (digitsOnly.Length == 0) return null;
+
+            return _store.Customers.FirstOrDefault(c => c.ContactNumber.Contains(digitsOnly));
+        }
+
+        public IReadOnlyList<Customer> Search(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return _store.Customers;
+
+            query = query.Trim();
+            return _store.Customers.Where(c =>
+                c.FullName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                c.ContactNumber.Contains(query) ||
+                c.CustomerId.ToString() == query
+            ).ToList();
+        }
+
+        public Customer GetById(int customerId) =>
+            _store.Customers.First(c => c.CustomerId == customerId);
+
+        public Customer Save(Customer customer)
+        {
+            if (customer.CustomerId == 0)
+            {
+                customer.CustomerId = _store.NextCustomerId();
+                _store.Customers.Add(customer);
+            }
+            return customer;
+        }
+
+        public IReadOnlyList<PointLedger> GetLedger(int customerId) =>
+            GetById(customerId).PointLedgers.OrderByDescending(l => l.Timestamp).ToList();
+
+        public IReadOnlyList<Order> GetOrderHistory(int customerId) =>
+            _store.Orders.Where(o => o.CustomerId == customerId).OrderByDescending(o => o.OrderDate).ToList();
+
+        public IReadOnlyList<Customer> GetAll() => _store.Customers;
+
+        public void AddLedgerEntry(PointLedger entry)
+        {
+            entry.PointLedgerId = _store.NextPointLedgerId();
+            var customer = _store.Customers.First(c => c.CustomerId == entry.CustomerId);
+            entry.Customer = customer;
+            customer.PointLedgers.Add(entry);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockDataStore.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    /// <summary>
+    /// Single shared in-memory "database" for the demo build. All Mock*Service classes
+    /// read/write through this so state (a customer's points, cart contents, etc.) stays
+    /// consistent across the app for one run. Get the shared instance via ServiceRegistry —
+    /// do not `new` a separate MockDataStore, or customer/product state will fork.
+    /// </summary>
+    public class MockDataStore
+    {
+        public List<Employee> Employees { get; } = new();
+        public List<Credential> Credentials { get; } = new();
+        public List<Customer> Customers { get; } = new();
+        public List<Product> Products { get; } = new();
+        public List<ProductModifier> Modifiers { get; } = new();
+        public List<Order> Orders { get; } = new();
+        public List<Campaign> Campaigns { get; } = new();
+        public List<Feedback> Feedbacks { get; } = new();
+        public List<PointAdjustmentRequest> PointAdjustmentRequests { get; } = new();
+
+        private int _nextEmployeeId = 1;
+        private int _nextCredentialId = 1;
+        private int _nextCustomerId = 1000;
+        private int _nextProductId = 1;
+        private int _nextProductSizeId = 1;
+        private int _nextModifierId = 1;
+        private int _nextCampaignId = 1;
+        private int _nextOrderId = 5000;
+        private int _nextOrderItemId = 1;
+        private int _nextOrderItemModifierId = 1;
+        private int _nextTicketId = 1;
+        private int _nextPointAdjustmentRequestId = 1;
+        private int _nextPointLedgerId = 1;
+        private int _nextRedeemId = 1;
+
+        public int NextCustomerId() => _nextCustomerId++;
+        public int NextOrderId() => _nextOrderId++;
+        public int NextOrderItemId() => _nextOrderItemId++;
+        public int NextOrderItemModifierId() => _nextOrderItemModifierId++;
+        public int NextTicketId() => _nextTicketId++;
+        public int NextPointAdjustmentRequestId() => _nextPointAdjustmentRequestId++;
+        public int NextPointLedgerId() => _nextPointLedgerId++;
+        public int NextRedeemId() => _nextRedeemId++;
+
+        public MockDataStore()
+        {
+            SeedEmployees();
+            SeedProducts();
+            SeedModifiers();
+            SeedCustomers();
+            SeedCampaigns();
+        }
+
+        private void SeedEmployees()
+        {
+            var barista = new Employee
+            {
+                EmployeeId = _nextEmployeeId++,
+                FirstName = "Ana",
+                LastName = "Reyes",
+                ContactNumber = "09171234567",
+            };
+            Employees.Add(barista);
+
+            var manager = new Employee
+            {
+                EmployeeId = _nextEmployeeId++,
+                FirstName = "Miguel",
+                LastName = "Santos",
+                ContactNumber = "09179876543",
+                Role = "Manager",
+            };
+            Employees.Add(manager);
+
+            var admin = new Employee
+            {
+                EmployeeId = _nextEmployeeId++,
+                FirstName = "Robert",
+                LastName = "Dela Cruz",
+                ContactNumber = "09171112233",
+                Role = "Admin",
+            };
+            Employees.Add(admin);
+
+            Credentials.Add(CreateCredential("ana.barista", "barista123", barista));
+            Credentials.Add(CreateCredential("miguel.manager", "manager123", manager));
+            Credentials.Add(CreateCredential("robert.admin", "admin123", admin));
+        }
+
+        private Credential CreateCredential(string username, string password, Employee employee)
+        {
+            var credential = new Credential
+            {
+                CredentialId = _nextCredentialId++,
+                Username = username,
+                PasswordHash = password, // seed data only — real hashing happens once login/auth is built
+                EmployeeId = employee.EmployeeId,
+                Employee = employee,
+            };
+            return credential;
+        }
+
+        private void SeedProducts()
+        {
+            AddProduct("ESP-001", "Café Americano", "Espresso", 110m,
+                new[] { ("Regular (12oz)", 110m), ("Large (16oz)", 130m) });
+            AddProduct("ESP-002", "Caramel Macchiato", "Espresso", 150m,
+                new[] { ("Regular (12oz)", 150m), ("Large (16oz)", 175m) });
+            AddProduct("CB-001", "Cold Brew", "Cold Brew", 140m,
+                new[] { ("Regular (16oz)", 140m), ("Large (22oz)", 165m) });
+            AddProduct("CB-002", "Vanilla Cold Foam Brew", "Cold Brew", 165m,
+                new[] { ("Regular (16oz)", 165m), ("Large (22oz)", 190m) });
+            AddProduct("NC-001", "Matcha Latte", "Non-Coffee", 155m,
+                new[] { ("Regular (12oz)", 155m), ("Large (16oz)", 180m) });
+            AddProduct("NC-002", "Hot Chocolate", "Non-Coffee", 130m,
+                new[] { ("Regular (12oz)", 130m), ("Large (16oz)", 150m) });
+            AddProduct("PS-001", "Butter Croissant", "Pastries", 95m,
+                new[] { ("Standard", 95m) });
+            AddProduct("PS-002", "Blueberry Muffin", "Pastries", 90m,
+                new[] { ("Standard", 90m) });
+        }
+
+        private void AddProduct(string code, string name, string category, decimal basePrice, (string SizeName, decimal Price)[] sizes)
+        {
+            var product = new Product
+            {
+                ProductId = _nextProductId++,
+                ProductCode = code,
+                ProductName = name,
+                ProductCategory = category,
+                BasePrice = basePrice,
+            };
+            Products.Add(product);
+
+            foreach (var (sizeName, price) in sizes)
+            {
+                var size = new ProductSize
+                {
+                    ProductSizeId = _nextProductSizeId++,
+                    ProductId = product.ProductId,
+                    SizeName = sizeName,
+                    Price = price,
+                    Product = product,
+                };
+                product.ProductSizes.Add(size);
+            }
+        }
+
+        private void SeedModifiers()
+        {
+            AddModifier("Extra Shot", "Espresso", 30m);
+            AddModifier("Oat Milk", "Milk", 40m);
+            AddModifier("Almond Milk", "Milk", 40m);
+            AddModifier("Extra Syrup Pump", "Syrup", 15m);
+            AddModifier("Whipped Cream", "Topping", 20m);
+            AddModifier("Less Ice", "Preparation", 0m);
+        }
+
+        private void AddModifier(string name, string category, decimal price)
+        {
+            Modifiers.Add(new ProductModifier
+            {
+                ProductModifierId = _nextModifierId++,
+                Name = name,
+                Category = category,
+                Price = price,
+            });
+        }
+
+        private void SeedCustomers()
+        {
+            AddCustomer("Jasmine", "Cruz", "09051112222", "jasmine.cruz@email.com", 540); // Gold
+            AddCustomer("Paolo", "Garcia", "09052223333", "paolo.garcia@email.com", 260);  // Silver
+            AddCustomer("Liza", "Torres", "09053334444", "liza.torres@email.com", 40);     // Regular
+        }
+
+        private void AddCustomer(string first, string last, string phone, string email, int pointsSeed)
+        {
+            var customer = new Customer
+            {
+                CustomerId = NextCustomerId(),
+                FirstName = first,
+                LastName = last,
+                ContactNumber = phone,
+                Email = email,
+                PointsBalance = pointsSeed,
+            };
+
+            if (pointsSeed > 0)
+            {
+                customer.PointLedgers.Add(new PointLedger
+                {
+                    PointLedgerId = NextPointLedgerId(),
+                    CustomerId = customer.CustomerId,
+                    PointsChange = pointsSeed,
+                    Type = "Earned",
+                    Reason = "Seed data — historical purchases",
+                    Customer = customer,
+                });
+            }
+
+            Customers.Add(customer);
+        }
+
+        private void SeedCampaigns()
+        {
+            Campaigns.Add(new Campaign
+            {
+                CampaignId = _nextCampaignId++,
+                PromoName = "Birthday Treat",
+                PromoCategory = "Birthday",
+                DiscountType = "Percentage",
+                DiscountValue = 20m,
+                TargetTier = "All",
+                MaxRedemptionsPerCustomer = 1,
+                StartDate = DateTime.Today.AddMonths(-1),
+                EndDate = DateTime.Today.AddMonths(11),
+            });
+
+            Campaigns.Add(new Campaign
+            {
+                CampaignId = _nextCampaignId++,
+                PromoName = "Gold Member Perk",
+                PromoCategory = "Loyalty",
+                DiscountType = "FixedAmount",
+                DiscountValue = 50m,
+                TargetTier = "Gold",
+                MinPurchaseAmount = 200m,
+                MaxRedemptionsPerCustomer = 1,
+                StartDate = DateTime.Today.AddMonths(-1),
+                EndDate = DateTime.Today.AddMonths(2),
+            });
+
+            Campaigns.Add(new Campaign
+            {
+                CampaignId = _nextCampaignId++,
+                PromoName = "We Miss You",
+                PromoCategory = "Inactive",
+                DiscountType = "Percentage",
+                DiscountValue = 15m,
+                TargetTier = "All",
+                MaxRedemptionsPerCustomer = 1,
+                StartDate = DateTime.Today.AddMonths(-2),
+                EndDate = DateTime.Today.AddMonths(4),
+            });
+
+            // A plain, always-available promo (no tier/birthday/min-spend gate, generous
+            // redemption cap) so there's always something selectable at the POS for
+            // testing/demo purposes — the other seeded campaigns above are all narrowly
+            // gated (Gold-only, birthday-only, inactive-customers-only).
+            Campaigns.Add(new Campaign
+            {
+                CampaignId = _nextCampaignId++,
+                PromoName = "Exam Week",
+                PromoCategory = "Seasonal",
+                DiscountType = "Percentage",
+                DiscountValue = 10m,
+                TargetTier = "All",
+                MaxRedemptionsPerCustomer = 50,
+                StartDate = DateTime.Today.AddDays(-7),
+                EndDate = DateTime.Today.AddMonths(1),
+            });
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockFeedbackService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    public class MockFeedbackService : IFeedbackService
+    {
+        private readonly MockDataStore _store;
+
+        public MockFeedbackService(MockDataStore store) => _store = store;
+
+        public Feedback Save(Feedback feedback)
+        {
+            if (feedback.TicketId == 0)
+            {
+                feedback.TicketId = _store.NextTicketId();
+                feedback.Customer = _store.Customers.First(c => c.CustomerId == feedback.CustomerId);
+                feedback.LoggedByEmployee = _store.Employees.First(e => e.EmployeeId == feedback.LoggedBy);
+                _store.Feedbacks.Add(feedback);
+                feedback.Customer.Feedbacks.Add(feedback);
+            }
+            return feedback;
+        }
+
+        public IReadOnlyList<Feedback> GetForCustomer(int customerId) =>
+            _store.Feedbacks.Where(f => f.CustomerId == customerId).OrderByDescending(f => f.DateLogged).ToList();
+
+        public IReadOnlyList<Feedback> GetAll() =>
+            _store.Feedbacks.OrderByDescending(f => f.DateLogged).ToList();
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockOrderService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    public class MockOrderService : IOrderService
+    {
+        private readonly MockDataStore _store;
+
+        public MockOrderService(MockDataStore store) => _store = store;
+
+        public Order StartOrder(int customerId, int createdByEmployeeId)
+        {
+            var customer = _store.Customers.First(c => c.CustomerId == customerId);
+
+            var order = new Order
+            {
+                OrderId = _store.NextOrderId(),
+                CustomerId = customerId,
+                CreatedBy = createdByEmployeeId,
+                Customer = customer,
+            };
+
+            _store.Orders.Add(order);
+            return order;
+        }
+
+        public Order LinkCustomerToOrder(Order order, Customer customer)
+        {
+            order.CustomerId = customer.CustomerId;
+            order.Customer = customer;
+            return order;
+        }
+
+        public OrderItem CreateOrderItem(Order order, Product product, ProductSize size, int quantity)
+        {
+            var item = new OrderItem
+            {
+                OrderItemId = _store.NextOrderItemId(),
+                OrderId = order.OrderId,
+                ProductId = product.ProductId,
+                ProductSizeId = size.ProductSizeId,
+                SizeNameSnapshot = size.SizeName,
+                BaseSizePrice = size.Price,
+                Quantity = quantity,
+                Product = product,
+                ProductSize = size,
+                Order = order,
+            };
+            order.OrderItems.Add(item);
+            return item;
+        }
+
+        public OrderItemModifier AddModifierToItem(OrderItem item, ProductModifier modifier)
+        {
+            var orderItemModifier = new OrderItemModifier
+            {
+                OrderItemModifierId = _store.NextOrderItemModifierId(),
+                OrderItemId = item.OrderItemId,
+                ProductModifierId = modifier.ProductModifierId,
+                ProductModifierNameSnapshot = modifier.Name,
+                UnitPrice = modifier.Price,
+                ProductModifier = modifier,
+                OrderItem = item,
+            };
+            item.OrderItemModifiers.Add(orderItemModifier);
+            return orderItemModifier;
+        }
+
+        public void RemoveOrderItem(Order order, OrderItem item) => order.OrderItems.Remove(item);
+
+        public CampaignRedeem CreateCampaignRedeem(Order order, Campaign campaign, decimal discountAmount)
+        {
+            var redeem = new CampaignRedeem
+            {
+                RedeemId = _store.NextRedeemId(),
+                CampaignId = campaign.CampaignId,
+                OrderId = order.OrderId,
+                DiscountUsed = discountAmount,
+                Campaign = campaign,
+                Order = order,
+            };
+            order.CampaignRedeems.Add(redeem);
+            campaign.CampaignRedeems.Add(redeem);
+            return redeem;
+        }
+
+        public void RemoveCampaignRedeem(Order order, CampaignRedeem redeem)
+        {
+            order.CampaignRedeems.Remove(redeem);
+            redeem.Campaign?.CampaignRedeems.Remove(redeem);
+        }
+
+        public void CompleteOrder(Order order)
+        {
+            // Status/PointsEarned are already set by TransactionController before this is
+            // called; nothing further to do for the in-memory mock.
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockPointAdjustmentService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    public class MockPointAdjustmentService : IPointAdjustmentService
+    {
+        private readonly MockDataStore _store;
+
+        public MockPointAdjustmentService(MockDataStore store) => _store = store;
+
+        public PointAdjustmentRequest Save(PointAdjustmentRequest request)
+        {
+            if (request.PointAdjustmentRequestId == 0)
+            {
+                request.PointAdjustmentRequestId = _store.NextPointAdjustmentRequestId();
+                request.Customer = _store.Customers.First(c => c.CustomerId == request.CustomerId);
+                request.Requester = _store.Employees.First(e => e.EmployeeId == request.RequestedBy);
+                _store.PointAdjustmentRequests.Add(request);
+                request.Customer.PointAdjustmentRequests.Add(request);
+            }
+            else if (request.ApprovedBy.HasValue)
+            {
+                request.Approver = _store.Employees.FirstOrDefault(e => e.EmployeeId == request.ApprovedBy.Value);
+            }
+
+            return request;
+        }
+
+        public PointAdjustmentRequest GetById(int requestId) =>
+            _store.PointAdjustmentRequests.First(r => r.PointAdjustmentRequestId == requestId);
+
+        public IReadOnlyList<PointAdjustmentRequest> GetForCustomer(int customerId) =>
+            _store.PointAdjustmentRequests.Where(r => r.CustomerId == customerId).OrderByDescending(r => r.RequestedAt).ToList();
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockProductCatalogService.cs =====
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.Services.Mock
+{
+    /// <summary>
+    /// This implementation was missing from the batch you pasted (the source chat likely ran
+    /// out of tokens before it, or it just didn't make it into the copy/paste) — authored here
+    /// to complete IProductCatalogService, following the same pattern as the sibling Mock*
+    /// services.
+    /// </summary>
+    public class MockProductCatalogService : IProductCatalogService
+    {
+        private readonly MockDataStore _store;
+
+        public MockProductCatalogService(MockDataStore store) => _store = store;
+
+        public IReadOnlyList<string> GetCategories() =>
+            _store.Products.Select(p => p.ProductCategory).Distinct().OrderBy(c => c).ToList();
+
+        public IReadOnlyList<Product> GetProducts() => _store.Products;
+
+        public IReadOnlyList<Product> GetByCategory(string category) =>
+            _store.Products.Where(p => p.ProductCategory.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        public Product GetById(int productId) =>
+            _store.Products.First(p => p.ProductId == productId);
+
+        public IReadOnlyList<ProductModifier> GetModifiers() => _store.Modifiers;
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/FrmCustomerOnboarding.cs =====
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.domain.entities;
+
+namespace CRM_Morcaffein.winforms.Views
+{
+    /// <summary>
+    /// Modal registration form, two steps: fill in details, then confirm before it actually
+    /// commits (a deliberate confirmation step, not just a single "Save" click, since this
+    /// creates a real customer record). Caller reads CreatedCustomer after ShowDialog()
+    /// returns OK.
+    ///
+    /// MVC note: no ViewModel — reads straight from its own textboxes at Save time and
+    /// calls CustomerController.Register directly.
+    /// </summary>
+    public partial class FrmCustomerOnboarding : Form
+    {
+        private readonly CustomerController _controller;
+        private DateTime? _birthday;
+
+        public Customer? CreatedCustomer { get; private set; }
+
+        public FrmCustomerOnboarding(CustomerController controller)
+        {
+            _controller = controller;
+            InitializeComponent();
+
+            hasBirthdayChk.CheckedChanged += (s, e) =>
+            {
+                birthdayPicker.Enabled = hasBirthdayChk.Checked;
+                _birthday = hasBirthdayChk.Checked ? birthdayPicker.Value.Date : null;
+            };
+            birthdayPicker.ValueChanged += (s, e) =>
+            {
+                if (hasBirthdayChk.Checked)
+                    _birthday = birthdayPicker.Value.Date;
+            };
+
+            nextBtn.Click += NextBtn_Click;
+            backBtn.Click += (s, e) => ShowDetailsStep();
+            confirmBtn.Click += ConfirmBtn_Click;
+
+            ShowDetailsStep();
+        }
+
+        private bool CanSave() =>
+            !string.IsNullOrWhiteSpace(firstNameTxtBx.Text) &&
+            !string.IsNullOrWhiteSpace(lastNameTxtBx.Text) &&
+            !string.IsNullOrWhiteSpace(phoneTxtBx.Text);
+
+        private void NextBtn_Click(object? sender, EventArgs e)
+        {
+            if (CanSave())
+            {
+                errorLabel.Text = string.Empty;
+                ShowConfirmStep();
+            }
+            else
+            {
+                errorLabel.Text = "Please fill in first name, last name, and phone number.";
+            }
+        }
+
+        private void ConfirmBtn_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                errorLabel.Text = string.Empty;
+                CreatedCustomer = _controller.Register(firstNameTxtBx.Text, lastNameTxtBx.Text, phoneTxtBx.Text, emailTxtBx.Text, _birthday);
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                // SetName/SetContact/SetEmail throw ArgumentException for invalid input
+                // (e.g. a phone number with fewer than 10 digits) — send the staff member
+                // back to the editable step so they can see and fix it.
+                ShowDetailsStep();
+                errorLabel.Text = ex.Message;
+            }
+        }
+
+        private void ShowDetailsStep()
+        {
+            detailsPanel.Visible = true;
+            confirmPanel.Visible = false;
+            nextBtn.Visible = true;
+            backBtn.Visible = false;
+            confirmBtn.Visible = false;
+            stepSubtitleLabel.Text = "Step 1 of 2 — Details";
+        }
+
+        private void ShowConfirmStep()
+        {
+            nameValueLabel.Text = $"Name: {firstNameTxtBx.Text} {lastNameTxtBx.Text}";
+            phoneValueLabel.Text = $"Phone: {phoneTxtBx.Text}";
+            emailValueLabel.Text = $"Email: {(string.IsNullOrWhiteSpace(emailTxtBx.Text) ? "Not provided" : emailTxtBx.Text)}";
+            birthdayValueLabel.Text = $"Birthday: {(_birthday.HasValue ? _birthday.Value.ToString("MMMM d, yyyy") : "Not provided")}";
+
+            detailsPanel.Visible = false;
+            confirmPanel.Visible = true;
+            nextBtn.Visible = false;
+            backBtn.Visible = true;
+            confirmBtn.Visible = true;
+            stepSubtitleLabel.Text = "Step 2 of 2 — Confirm";
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/FrmItemCustomizer.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views
+{
+    public enum CustomizerMode
+    {
+        NewItem,
+        EditExisting,
+    }
+
+    /// <summary>
+    /// Code-only modal (no paired Designer.cs — everything is built in the constructor
+    /// below, same convention as Views/Controls/ProductCardControl.cs). Drop this file in
+    /// alongside the other Forms; it needs no designer surface to work.
+    ///
+    /// Opened either from a drink card click (Mode == NewItem) or from clicking an existing
+    /// cart line to edit it (Mode == EditExisting). Caller reads SelectedSize / Quantity /
+    /// SelectedModifiers after ShowDialog() returns OK.
+    ///
+    /// MVC note: no ViewModel — this modal doesn't talk to any Model/Service at all (it's
+    /// pure local price-preview arithmetic on the size/modifiers/quantity picked so far), so
+    /// it just keeps its own plain fields instead of wrapping them in a bindable object.
+    /// </summary>
+    public class FrmItemCustomizer : Form
+    {
+        public Product Product { get; }
+        public CustomizerMode Mode { get; }
+
+        private readonly List<ProductSize> _sizes;
+        private readonly Dictionary<ProductModifier, CheckBox> _modifierChecks = new();
+
+        public ProductSize SelectedSize { get; private set; }
+        public int Quantity { get; private set; } = 1;
+        public IEnumerable<ProductModifier> SelectedModifiers =>
+            _modifierChecks.Where(kv => kv.Value.Checked).Select(kv => kv.Key);
+
+        private decimal CalculatedUnitPrice => SelectedSize.Price + SelectedModifiers.Sum(m => m.Price);
+        private decimal CalculatedLineTotal => CalculatedUnitPrice * Quantity;
+
+        private readonly Panel _sizePanel = new() { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 4, 0, 10) };
+        private readonly Panel _modifiersPanel = new() { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(0, 4, 0, 10) };
+        private readonly Label _priceLabel = new() { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.MiddleRight };
+        private readonly Label _qtyValueLabel = new() { Width = 36, TextAlign = ContentAlignment.MiddleCenter, Font = BrandPalette.BrandFontBold(11f) };
+        private readonly Button _confirmBtn;
+
+        /// <param name="editingItem">Pass the existing OrderItem to pre-populate for editing; null for a brand new line.</param>
+        public FrmItemCustomizer(Product product, IReadOnlyList<ProductModifier> allModifiers, OrderItem? editingItem = null)
+        {
+            Product = product;
+            _sizes = product.ProductSizes.ToList();
+            if (_sizes.Count == 0)
+                throw new InvalidOperationException($"{product.ProductName} has no sizes configured.");
+
+            Mode = editingItem != null ? CustomizerMode.EditExisting : CustomizerMode.NewItem;
+            SelectedSize = editingItem != null
+                ? _sizes.FirstOrDefault(s => s.ProductSizeId == editingItem.ProductSizeId) ?? _sizes[0]
+                : _sizes[0];
+            Quantity = editingItem?.Quantity ?? 1;
+
+            Text = Mode == CustomizerMode.NewItem ? "Customize Item" : "Edit Item";
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(360, 520);
+            BackColor = BrandPalette.SurfacePrimary;
+            Padding = new Padding(18);
+
+            var productNameLabel = new Label
+            {
+                Text = product.ProductName,
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(13f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var sizeHeader = SectionHeader("Size");
+            BuildSizeOptions();
+
+            var modifierHeader = SectionHeader("Modifiers");
+            BuildModifierOptions(allModifiers, editingItem);
+
+            var qtyHeader = SectionHeader("Quantity");
+            var qtyRow = BuildQuantityStepper();
+
+            _confirmBtn = new Button
+            {
+                Text = Mode == CustomizerMode.NewItem ? "Add to Cart" : "Update Item",
+                Dock = DockStyle.Bottom,
+                Height = 42,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(10.5f),
+            };
+            _confirmBtn.FlatAppearance.BorderSize = 0;
+            _confirmBtn.Click += (s, e) => { DialogResult = DialogResult.OK; Close(); };
+
+            var cancelBtn = new Button
+            {
+                Text = "Cancel",
+                Dock = DockStyle.Bottom,
+                Height = 34,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonSecondaryFill,
+                ForeColor = BrandPalette.ButtonSecondaryText,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                Margin = new Padding(0, 0, 0, 6),
+            };
+            cancelBtn.FlatAppearance.BorderSize = 0;
+            cancelBtn.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+
+            // Added bottom-up because these are Dock.Bottom/Top mixed; Controls order below
+            // keeps the visual stack: name -> size -> modifiers -> qty -> price -> buttons.
+            Controls.Add(_priceLabel);
+            Controls.Add(qtyRow);
+            Controls.Add(qtyHeader);
+            Controls.Add(_modifiersPanel);
+            Controls.Add(modifierHeader);
+            Controls.Add(_sizePanel);
+            Controls.Add(sizeHeader);
+            Controls.Add(productNameLabel);
+            Controls.Add(cancelBtn);
+            Controls.Add(_confirmBtn);
+
+            RefreshPriceLabel();
+        }
+
+        private static Label SectionHeader(string text) => new()
+        {
+            Text = text,
+            Dock = DockStyle.Top,
+            Height = 22,
+            Font = BrandPalette.BrandFontBold(9.5f),
+            ForeColor = BrandPalette.NeutralTextMuted,
+        };
+
+        private void BuildSizeOptions()
+        {
+            foreach (var size in _sizes)
+            {
+                var radio = new RadioButton
+                {
+                    Text = $"{size.SizeName} — ₱{size.Price:0.##}",
+                    Dock = DockStyle.Top,
+                    Height = 26,
+                    Checked = size.ProductSizeId == SelectedSize.ProductSizeId,
+                    Font = BrandPalette.BrandFontRegular(9.5f),
+                };
+                radio.CheckedChanged += (s, e) =>
+                {
+                    if (radio.Checked)
+                    {
+                        SelectedSize = size;
+                        RefreshPriceLabel();
+                    }
+                };
+                _sizePanel.Controls.Add(radio);
+            }
+            // Panel.Controls.Add with Dock=Top stacks in reverse visual order (last added is
+            // topmost) — reverse the child order so sizes read top-to-bottom as seeded.
+            var children = _sizePanel.Controls.Cast<Control>().ToList();
+            _sizePanel.Controls.Clear();
+            for (int i = children.Count - 1; i >= 0; i--)
+                _sizePanel.Controls.Add(children[i]);
+        }
+
+        private void BuildModifierOptions(IReadOnlyList<ProductModifier> allModifiers, OrderItem? editingItem)
+        {
+            foreach (var modifier in allModifiers)
+            {
+                var isPreSelected = editingItem != null &&
+                    editingItem.OrderItemModifiers.Any(m => m.ProductModifierId == modifier.ProductModifierId);
+
+                var check = new CheckBox
+                {
+                    Text = $"{modifier.Name} (+₱{modifier.Price:0.##})",
+                    Dock = DockStyle.Top,
+                    Height = 26,
+                    Checked = isPreSelected,
+                    Font = BrandPalette.BrandFontRegular(9.5f),
+                };
+                check.CheckedChanged += (s, e) => RefreshPriceLabel();
+                _modifierChecks[modifier] = check;
+                _modifiersPanel.Controls.Add(check);
+            }
+            var children = _modifiersPanel.Controls.Cast<Control>().ToList();
+            _modifiersPanel.Controls.Clear();
+            for (int i = children.Count - 1; i >= 0; i--)
+                _modifiersPanel.Controls.Add(children[i]);
+        }
+
+        private Panel BuildQuantityStepper()
+        {
+            var row = new Panel { Dock = DockStyle.Top, Height = 40 };
+
+            var minusBtn = MakeStepperButton("-");
+            minusBtn.Left = 0;
+            minusBtn.Click += (s, e) =>
+            {
+                Quantity = Math.Max(1, Quantity - 1);
+                _qtyValueLabel.Text = Quantity.ToString();
+                RefreshPriceLabel();
+            };
+
+            var plusBtn = MakeStepperButton("+");
+            plusBtn.Left = minusBtn.Width + 44;
+            plusBtn.Click += (s, e) =>
+            {
+                Quantity += 1;
+                _qtyValueLabel.Text = Quantity.ToString();
+                RefreshPriceLabel();
+            };
+
+            _qtyValueLabel.Left = minusBtn.Width + 4;
+            _qtyValueLabel.Top = 4;
+            _qtyValueLabel.Height = 32;
+            _qtyValueLabel.Text = Quantity.ToString();
+
+            row.Controls.Add(minusBtn);
+            row.Controls.Add(_qtyValueLabel);
+            row.Controls.Add(plusBtn);
+            return row;
+        }
+
+        private static Button MakeStepperButton(string text) => new()
+        {
+            Text = text,
+            Width = 32,
+            Height = 32,
+            Top = 4,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = BrandPalette.ButtonSecondaryFill,
+            ForeColor = BrandPalette.ButtonSecondaryText,
+            Font = BrandPalette.BrandFontBold(12f),
+        };
+
+        private void RefreshPriceLabel()
+        {
+            _priceLabel.Text = $"Total: ₱{CalculatedLineTotal:0.00}";
+            _priceLabel.Font = BrandPalette.BrandFontBold(13f);
+            _priceLabel.ForeColor = BrandPalette.Brand;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/FrmLogFeedback.cs =====
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views
+{
+    /// <summary>
+    /// Modal for logging a new feedback ticket. Step 1 finds/picks the customer (its own
+    /// search — this modal doesn't depend on anything being pre-selected by the caller);
+    /// step 2 fills in the rating/category/notes.
+    ///
+    /// MVC note: no ViewModel — this Form calls FeedbackController methods directly and
+    /// keeps its own plain fields for in-progress input (_selectedCustomer/_rating/
+    /// _category), the same way any Controller-backed form tracks unsaved form state.
+    /// </summary>
+    public partial class FrmLogFeedback : Form
+    {
+        private readonly FeedbackController _controller;
+        private readonly int _loggedByEmployeeId;
+
+        private Customer? _selectedCustomer;
+        private int _rating;
+        private string _category = string.Empty;
+
+        public Feedback? CreatedFeedback { get; private set; }
+
+        public FrmLogFeedback(FeedbackController controller, int loggedByEmployeeId)
+        {
+            _controller = controller;
+            _loggedByEmployeeId = loggedByEmployeeId;
+            InitializeComponent();
+
+            customerSearchTxtBx.TextChanged += CustomerSearchTxtBx_TextChanged;
+            customerResultsListBox.DisplayMember = nameof(Customer.FullName);
+            customerResultsListBox.SelectedIndexChanged += (s, e) =>
+                nextBtn.Enabled = customerResultsListBox.SelectedItem != null;
+
+            starRating.RatingChanged += (s, e) => { _rating = starRating.Rating; UpdateSubmitEnabled(); };
+            categoryCombo.SelectedIndexChanged += (s, e) => { _category = categoryCombo.SelectedItem as string ?? string.Empty; UpdateSubmitEnabled(); };
+
+            nextBtn.Click += NextBtn_Click;
+            backBtn.Click += (s, e) => ShowPickCustomerStep();
+            submitBtn.Click += SubmitBtn_Click;
+
+            ButtonStyler.TrackEnabledState(nextBtn);
+            ButtonStyler.TrackEnabledState(submitBtn);
+
+            ShowPickCustomerStep();
+            CustomerSearchTxtBx_TextChanged(this, EventArgs.Empty); // populate the initial (unfiltered) results list
+        }
+
+        private void CustomerSearchTxtBx_TextChanged(object? sender, EventArgs e)
+        {
+            customerResultsListBox.DataSource = _controller.SearchCustomers(customerSearchTxtBx.Text).ToList();
+        }
+
+        private void NextBtn_Click(object? sender, EventArgs e)
+        {
+            if (customerResultsListBox.SelectedItem is not Customer customer)
+                return;
+
+            _selectedCustomer = customer;
+            customerLabel.Text = $"For: {customer.FullName}";
+            ShowDetailsStep();
+            UpdateSubmitEnabled();
+        }
+
+        private void UpdateSubmitEnabled()
+        {
+            submitBtn.Enabled = _selectedCustomer != null && _rating is >= 1 and <= 5 && !string.IsNullOrWhiteSpace(_category);
+        }
+
+        private void SubmitBtn_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                errorLabel.Text = string.Empty;
+                CreatedFeedback = _controller.LogFeedback(
+                    _selectedCustomer!.CustomerId, _loggedByEmployeeId, _rating, _category, staffNotesTxtBx.Text);
+
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                errorLabel.Text = ex.Message;
+            }
+        }
+
+        private void ShowPickCustomerStep()
+        {
+            customerPickPanel.Visible = true;
+            detailsPanel.Visible = false;
+            cancelBtn.Visible = true;
+            nextBtn.Visible = true;
+            backBtn.Visible = false;
+            submitBtn.Visible = false;
+            stepSubtitleLabel.Text = "Step 1 of 2 — Find Customer";
+        }
+
+        private void ShowDetailsStep()
+        {
+            customerPickPanel.Visible = false;
+            detailsPanel.Visible = true;
+            cancelBtn.Visible = false; // step 2 offers Back instead — Cancel would just duplicate it
+            nextBtn.Visible = false;
+            backBtn.Visible = true;
+            submitBtn.Visible = true;
+            stepSubtitleLabel.Text = "Step 2 of 2 — Feedback Details";
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/FrmLogin.cs =====
+﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Text;
+using System.Windows.Forms;
+
+namespace CRM_Morcaffein.winforms.Views
+{
+    public partial class FrmLogin : Form
+    {
+        public FrmLogin()
+        {
+            InitializeComponent();
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/FrmMain.cs =====
+using CRM_Morcaffein.Services;
+using CRM_Morcaffein.Session;
+using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Views.Controls;
+
+namespace CRM_Morcaffein.winforms.Views
+{
+    /// <summary>
+    /// Staff console shell: a right-docked nav strip and a content area that swaps in
+    /// whichever tab is active. Customers and Feedback are wired up; Transactions is
+    /// visible but disabled until it's built out.
+    /// </summary>
+    public partial class FrmMain : Form
+    {
+        public FrmMain()
+        {
+            InitializeComponent();
+
+            // Login isn't wired up yet — seed a placeholder session so the sidebar's
+            // account footer has something real to show. Once FrmLogin calls
+            // EmployeeSession.Start(...) itself, this becomes a no-op (Current is already set).
+            if (EmployeeSession.Current is null)
+                EmployeeSession.Start(ServiceRegistry.PlaceholderStaffAccount);
+
+            staffNameLabel.Text = EmployeeSession.Current!.DisplayName;
+            staffRoleLabel.Text = EmployeeSession.Current.Employee.Role;
+            avatarPanel.Paint += AvatarPanel_Paint;
+            brandMarkPanel.Paint += BrandMarkPanel_Paint;
+
+            navTransactionsBtn.Click += (s, e) => ShowTransactionsView();
+            navCustomersBtn.Click += (s, e) => ShowCustomersView();
+            navFeedbackBtn.Click += (s, e) => ShowFeedbackView();
+            logoutBtn.Click += LogoutBtn_Click;
+        }
+
+        private void FrmMain_Load(object sender, EventArgs e)
+        {
+            ShowCustomersView();
+        }
+
+        private void ShowTransactionsView()
+        {
+            SetActiveNav(navTransactionsBtn);
+            topBarTabLabel.Text = "/ Transactions";
+            ShowView(new TransactionView());
+        }
+
+        private void ShowCustomersView()
+        {
+            SetActiveNav(navCustomersBtn);
+            topBarTabLabel.Text = "/ Customers";
+            ShowView(new CustomerManagementView());
+        }
+
+        private void ShowFeedbackView()
+        {
+            SetActiveNav(navFeedbackBtn);
+            topBarTabLabel.Text = "/ Feedback";
+            ShowView(new FeedbackManagementView());
+        }
+
+        private void ShowView(UserControl view)
+        {
+            contentPanel.Controls.Clear();
+            view.Dock = DockStyle.Fill;
+            contentPanel.Controls.Add(view);
+        }
+
+        private void SetActiveNav(Button active)
+        {
+            foreach (var button in new[] { navTransactionsBtn, navCustomersBtn, navFeedbackBtn })
+            {
+                button.BackColor = button == active ? BrandPalette.NavActiveBackground : BrandPalette.NavBackground;
+                button.ForeColor = button == active ? BrandPalette.NavActiveText : BrandPalette.NavText;
+                button.Font = button == active ? BrandPalette.BrandFontBold(10f) : BrandPalette.BrandFontRegular(10f);
+            }
+        }
+
+        private void LogoutBtn_Click(object? sender, EventArgs e)
+        {
+            var confirm = MessageBox.Show(this,
+                $"Log out of {EmployeeSession.Current?.DisplayName}'s session?",
+                "Log Out", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (confirm != DialogResult.Yes)
+                return;
+
+            EmployeeSession.End();
+
+            // There's no login screen wired up yet to send the user back to — closing the
+            // app is the honest behavior for now. Once FrmLogin exists again, this should
+            // show it and close this shell instead of exiting outright.
+            Close();
+        }
+
+        private void BrandMarkPanel_Paint(object? sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            using var brush = new SolidBrush(BrandPalette.Brand);
+            g.FillEllipse(brush, 0, 0, brandMarkPanel.Width - 1, brandMarkPanel.Height - 1);
+
+            using var font = BrandPalette.BrandFontBold(11f);
+            var textSize = g.MeasureString("M", font);
+            g.DrawString("M", font, Brushes.White,
+                (brandMarkPanel.Width - textSize.Width) / 2, (brandMarkPanel.Height - textSize.Height) / 2);
+        }
+
+        private void AvatarPanel_Paint(object? sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            using var brush = new SolidBrush(BrandPalette.Brand);
+            g.FillEllipse(brush, 0, 0, avatarPanel.Width - 1, avatarPanel.Height - 1);
+
+            var initials = GetInitials(EmployeeSession.Current?.DisplayName);
+            using var font = BrandPalette.BrandFontBold(11f);
+            var textSize = g.MeasureString(initials, font);
+            g.DrawString(initials, font, Brushes.White,
+                (avatarPanel.Width - textSize.Width) / 2, (avatarPanel.Height - textSize.Height) / 2);
+        }
+
+        private static string GetInitials(string? fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName))
+                return "?";
+
+            var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length switch
+            {
+                0 => "?",
+                1 => parts[0][..1].ToUpperInvariant(),
+                _ => (parts[0][..1] + parts[^1][..1]).ToUpperInvariant(),
+            };
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/CartLineControl.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// One row in the Order box: "Drink Name (Size) +Mods … ₱SubTotal [- 2x +] ✕" — a compact
+    /// inline quantity stepper instead of a data-grid row, matching a modern POS's order list
+    /// rather than the boxed-table convention the rest of the app uses.
+    ///
+    /// Absolute-positioned children recomputed on every OnResize. Deliberately NOT Dock-based
+    /// (a Dock.Fill name label at full row height wraps before AutoEllipsis kicks in) and NOT
+    /// TableLayoutPanel (absolute columns get clipped when the host is narrower than expected).
+    ///
+    /// The ✕ is a Label, not a Button — WinForms FlatStyle buttons enforce a minimum width
+    /// larger than the 28px we want, so a Button ✕ visually overlapped the + stepper button.
+    /// Labels have no such floor.
+    /// </summary>
+    public class CartLineControl : Panel
+    {
+        public OrderItem Item { get; }
+
+        public event EventHandler? QuantityIncreased;
+        public event EventHandler? QuantityDecreased;
+        public event EventHandler? RemoveClicked;
+
+        private const int RowHeight = 44;
+        private const int NameHeight = 22;
+        private const int StepperButtonSize = 30;
+        private const int QtyLabelWidth = 34;
+        private const int StepperClusterWidth = StepperButtonSize + QtyLabelWidth + StepperButtonSize; // 94
+        private const int GapBeforeRemove = 10;
+        private const int RemoveWidth = 28;
+        private const int PriceWidth = 76;
+        private const int RightClusterWidth = StepperClusterWidth + GapBeforeRemove + RemoveWidth;     // 132
+
+        private readonly Label _nameLabel = null!;
+        private readonly Label _priceLabel = null!;
+        private readonly Panel _rightCluster = null!;
+        private readonly FlowLayoutPanel _stepper = null!;
+        private readonly Label _removeLabel = null!;
+
+        public CartLineControl(OrderItem item)
+        {
+            Item = item;
+
+            Height = RowHeight;
+            Margin = new Padding(0, 0, 0, 3);
+            BackColor = BrandPalette.SurfacePrimary;
+
+            var modifiersSuffix = item.OrderItemModifiers.Count == 0
+                ? string.Empty
+                : $" +{string.Join(",", item.OrderItemModifiers.Select(m => m.ProductModifierNameSnapshot))}";
+
+            _nameLabel = new Label
+            {
+                Text = $"{item.Product?.ProductName ?? "—"} ({item.SizeNameSnapshot}){modifiersSuffix}",
+                AutoSize = false,
+                Height = NameHeight,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            _priceLabel = new Label
+            {
+                Text = $"₱{item.SubTotal:0.00}",
+                AutoSize = false,
+                Width = PriceWidth,
+                Height = RowHeight,
+                TextAlign = ContentAlignment.MiddleRight,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            _rightCluster = new Panel
+            {
+                Width = RightClusterWidth,
+                Height = RowHeight,
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            _stepper = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Width = StepperClusterWidth,
+                Height = RowHeight,
+                Padding = new Padding(0, 7, 0, 7),
+            };
+
+            var minusBtn = MakeStepperButton("-");
+            minusBtn.Click += (s, e) => QuantityDecreased?.Invoke(this, EventArgs.Empty);
+
+            var qtyLabel = new Label
+            {
+                Text = $"{item.Quantity}x",
+                Width = QtyLabelWidth,
+                Height = StepperButtonSize,
+                Margin = new Padding(0),            // ← same reason
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = BrandPalette.BrandFontBold(10f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var plusBtn = MakeStepperButton("+");
+            plusBtn.Click += (s, e) => QuantityIncreased?.Invoke(this, EventArgs.Empty);
+
+            _stepper.Controls.Add(minusBtn);
+            _stepper.Controls.Add(qtyLabel);
+            _stepper.Controls.Add(plusBtn);
+
+            _removeLabel = new Label
+            {
+                Text = "✕",
+                Width = RemoveWidth,
+                Height = RowHeight,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = BrandPalette.BrandFontRegular(12f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = BrandPalette.SurfacePrimary,
+                Cursor = Cursors.Hand,
+            };
+            _removeLabel.Click += (s, e) => RemoveClicked?.Invoke(this, EventArgs.Empty);
+
+            Controls.Add(_nameLabel);
+            Controls.Add(_priceLabel);
+            Controls.Add(_rightCluster);
+            _rightCluster.Controls.Add(_stepper);
+            _rightCluster.Controls.Add(_removeLabel);
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            LayoutChildren();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            LayoutChildren();
+        }
+
+        private void LayoutChildren()
+        {
+            // OnResize fires from the base Panel constructor (via the Height assignment at the
+            // top of our own constructor) BEFORE the child fields are assigned. Bail until
+            // everything's wired up — real layout runs from OnHandleCreated and every resize.
+            if (_nameLabel is null || _priceLabel is null || _rightCluster is null ||
+                _stepper is null || _removeLabel is null)
+                return;
+
+            var width = ClientSize.Width;
+            if (width <= 0)
+                return;
+
+            _rightCluster.Location = new Point(width - RightClusterWidth, 0);
+            _removeLabel.Location = new Point(RightClusterWidth - RemoveWidth, 0);
+            _stepper.Location = new Point(0, 0);
+            _priceLabel.Location = new Point(_rightCluster.Left - PriceWidth, 0);
+
+            var nameWidth = Math.Max(0, _priceLabel.Left - 4);
+            _nameLabel.Location = new Point(0, (RowHeight - NameHeight) / 2);
+            _nameLabel.Width = nameWidth;
+        }
+
+        private static Button MakeStepperButton(string text) => new()
+        {
+            Text = text,
+            Width = StepperButtonSize,
+            Height = StepperButtonSize,
+            Margin = new Padding(0),            // ← FlowLayoutPanel default margin (3px each side) was
+                                                // squeezing the trailing + button out of the 94px stepper
+            FlatStyle = FlatStyle.Flat,
+            BackColor = BrandPalette.ButtonSecondaryFill,
+            ForeColor = BrandPalette.ButtonSecondaryText,
+            Font = BrandPalette.BrandFontBold(10f),
+            Cursor = Cursors.Hand,
+        };
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/CustomerManagementView.cs =====
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services;
+using CRM_Morcaffein.Session;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// The Customers tab: searchable grid on the right, a profile drawer on the left that
+    /// shows order history / points ledger / the point-adjustment request-and-approve
+    /// workflow for whichever row is clicked. "+ New Customer" opens FrmCustomerOnboarding
+    /// as a modal.
+    ///
+    /// MVC note: this View owns no business logic and holds no bindable state objects — it
+    /// calls CustomerController methods directly and uses the returned data to update its
+    /// own controls. _selectedCustomer/_selectedRequest are just plain in-progress UI state
+    /// (which rows are highlighted), not a Model concern.
+    /// </summary>
+    public partial class CustomerManagementView : UserControl
+    {
+        private readonly CustomerController _controller;
+        private readonly BindingSource _customersBindingSource = new();
+
+        private Customer? _selectedCustomer;
+        private PointAdjustmentRequest? _selectedRequest;
+
+        public CustomerManagementView() : this(ServiceRegistry.Customers, ServiceRegistry.PointAdjustments)
+        {
+        }
+
+        public CustomerManagementView(ICustomerService customerService, IPointAdjustmentService pointAdjustmentService)
+        {
+            _controller = new CustomerController(customerService, pointAdjustmentService);
+            InitializeComponent();
+
+            ConfigureCustomersGridColumns();
+            ConfigureOrderHistoryGridColumns();
+            ConfigureLedgerGridColumns();
+            ConfigureAdjustmentRequestsGridColumns();
+
+            customersGrid.DataSource = _customersBindingSource;
+            customersGrid.SelectionChanged += CustomersGrid_SelectionChanged;
+            customersGrid.CellFormatting += CustomersGrid_CellFormatting;
+
+            searchTxtBx.TextChanged += (s, e) => ReloadCustomers();
+            newCustomerBtn.Click += (s, e) => OpenOnboardingModal();
+
+            // newCustomerBtn hugs the card's right edge. This card is sized entirely in code
+            // (Dock=Fill computed at runtime), so Anchor's baked-in offset from construction
+            // time isn't reliable here — reposition explicitly whenever the header resizes.
+            cardHeaderPanel.Resize += (s, e) => PositionActionButton();
+            PositionActionButton();
+
+            ButtonStyler.TrackEnabledState(submitRequestBtn);
+            ButtonStyler.TrackEnabledState(approveBtn);
+            ButtonStyler.TrackEnabledState(rejectBtn);
+
+            adjustmentRequestsGrid.SelectionChanged += AdjustmentRequestsGrid_SelectionChanged;
+
+            requestAmountNud.ValueChanged += (s, e) => UpdateSubmitRequestEnabled();
+            requestReasonTxtBx.TextChanged += (s, e) => UpdateSubmitRequestEnabled();
+            submitRequestBtn.Click += SubmitRequestBtn_Click;
+
+            rejectionNotesTxtBx.TextChanged += (s, e) => UpdateApprovalControlsEnabled();
+            approveBtn.Click += ApproveBtn_Click;
+            rejectBtn.Click += RejectBtn_Click;
+
+            ReloadCustomers();
+        }
+
+        private void PositionActionButton()
+        {
+            newCustomerBtn.Left = cardHeaderPanel.ClientSize.Width - newCustomerBtn.Width - 16;
+            newCustomerBtn.Top = 14;
+        }
+
+        private void ReloadCustomers()
+        {
+            var previousId = _selectedCustomer?.CustomerId;
+            var results = _controller.Search(searchTxtBx.Text);
+            _customersBindingSource.DataSource = results.ToList();
+
+            var stillPresent = previousId.HasValue ? results.FirstOrDefault(c => c.CustomerId == previousId.Value) : null;
+            if (stillPresent != null)
+            {
+                SelectCustomerRowById(stillPresent.CustomerId);
+            }
+            else
+            {
+                _selectedCustomer = null;
+                RefreshDrawer();
+            }
+        }
+
+        private void CustomersGrid_SelectionChanged(object? sender, EventArgs e)
+        {
+            _selectedCustomer = customersGrid.CurrentRow?.DataBoundItem as Customer;
+            RefreshDrawer();
+        }
+
+        private void CustomersGrid_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+        {
+            if (customersGrid.Rows[e.RowIndex].DataBoundItem is not Customer customer)
+                return;
+
+            if (customersGrid.Columns[e.ColumnIndex].Name == "Tier")
+            {
+                e.Value = CustomerController.GetTier(customer.PointsBalance);
+                e.FormattingApplied = true;
+            }
+        }
+
+        private void AdjustmentRequestsGrid_SelectionChanged(object? sender, EventArgs e)
+        {
+            _selectedRequest = adjustmentRequestsGrid.CurrentRow?.DataBoundItem as PointAdjustmentRequest;
+            UpdateApprovalControlsEnabled();
+        }
+
+        private void UpdateSubmitRequestEnabled()
+        {
+            submitRequestBtn.Enabled = _controller.CanRequestAdjustment &&
+                requestAmountNud.Value != 0 &&
+                !string.IsNullOrWhiteSpace(requestReasonTxtBx.Text);
+        }
+
+        private void UpdateApprovalControlsEnabled()
+        {
+            approvalHintLabel.Text = _selectedRequest is { Status: "Pending" }
+                ? $"Selected: {(_selectedRequest.PointsChange > 0 ? "+" : string.Empty)}{_selectedRequest.PointsChange} pts — {_selectedRequest.Reason}"
+                : "Select a pending request above.";
+
+            var canActOnSelection = _controller.CanApprove &&
+                _selectedRequest is { Status: "Pending" } &&
+                _selectedRequest.RequestedBy != EmployeeSession.Current?.EmployeeId;
+
+            approveBtn.Enabled = canActOnSelection;
+            rejectBtn.Enabled = canActOnSelection && !string.IsNullOrWhiteSpace(rejectionNotesTxtBx.Text);
+        }
+
+        private void SubmitRequestBtn_Click(object? sender, EventArgs e)
+        {
+            if (_selectedCustomer is null)
+                return;
+
+            try
+            {
+                _controller.RequestAdjustment(
+                    _selectedCustomer.CustomerId, (int)requestAmountNud.Value, requestReasonTxtBx.Text, EmployeeSession.Current!.EmployeeId);
+
+                requestStatusLabel.Text = "Submitted — waiting on admin approval.";
+                requestAmountNud.Value = 0;
+                requestReasonTxtBx.Text = string.Empty;
+                RefreshDrawer();
+            }
+            catch (Exception ex)
+            {
+                requestStatusLabel.Text = ex.Message;
+            }
+        }
+
+        private void ApproveBtn_Click(object? sender, EventArgs e)
+        {
+            if (_selectedRequest is null || _selectedCustomer is null)
+                return;
+
+            try
+            {
+                _controller.ApproveAdjustment(_selectedRequest.PointAdjustmentRequestId, EmployeeSession.Current!.EmployeeId);
+                approvalStatusLabel.Text = "Approved — points applied.";
+                rejectionNotesTxtBx.Text = string.Empty;
+
+                var affectedCustomerId = _selectedCustomer.CustomerId;
+                ReloadCustomers();
+                SelectCustomerRowById(affectedCustomerId);
+            }
+            catch (Exception ex)
+            {
+                approvalStatusLabel.Text = ex.Message;
+            }
+        }
+
+        private void RejectBtn_Click(object? sender, EventArgs e)
+        {
+            if (_selectedRequest is null)
+                return;
+
+            try
+            {
+                _controller.RejectAdjustment(_selectedRequest.PointAdjustmentRequestId, EmployeeSession.Current!.EmployeeId, rejectionNotesTxtBx.Text);
+                approvalStatusLabel.Text = "Rejected.";
+                rejectionNotesTxtBx.Text = string.Empty;
+                RefreshDrawer();
+            }
+            catch (Exception ex)
+            {
+                approvalStatusLabel.Text = ex.Message;
+            }
+        }
+
+        private void OpenOnboardingModal()
+        {
+            using var form = new FrmCustomerOnboarding(_controller);
+
+            if (form.ShowDialog(FindForm()) == DialogResult.OK && form.CreatedCustomer != null)
+            {
+                ReloadCustomers();
+                SelectCustomerRowById(form.CreatedCustomer.CustomerId);
+            }
+        }
+
+        private void RefreshDrawer()
+        {
+            var customer = _selectedCustomer;
+            if (customer is null)
+            {
+                drawerEmptyLabel.Visible = true;
+                drawerContentPanel.Visible = false;
+                return;
+            }
+
+            drawerEmptyLabel.Visible = false;
+            drawerContentPanel.Visible = true;
+
+            customerNameLabel.Text = customer.FullName;
+            tierBadgeLabel.Text = $"{CustomerController.GetTier(customer.PointsBalance)} Tier";
+            pointsBalanceLabel.Text = $"{customer.PointsBalance:N0} pts";
+            contactLabel.Text = string.IsNullOrWhiteSpace(customer.Email)
+                ? customer.ContactNumber
+                : $"{customer.ContactNumber}   •   {customer.Email}";
+
+            orderHistoryGrid.DataSource = null;
+            orderHistoryGrid.DataSource = _controller.GetOrderHistory(customer.CustomerId).ToList();
+            ledgerGrid.DataSource = null;
+            ledgerGrid.DataSource = _controller.GetLedger(customer.CustomerId).ToList();
+
+            _selectedRequest = null;
+            adjustmentRequestsGrid.DataSource = null;
+            adjustmentRequestsGrid.DataSource = _controller.GetPendingAdjustmentRequests(customer.CustomerId).ToList();
+
+            // Staff (non-manager) never sees the request form at all; a plain manager sees
+            // it but not the approve/reject controls; an admin sees both.
+            requestSectionPanel.Visible = _controller.CanRequestAdjustment;
+            approvalSectionPanel.Visible = _controller.CanApprove;
+
+            requestAmountNud.Value = 0;
+            requestReasonTxtBx.Text = string.Empty;
+            requestStatusLabel.Text = string.Empty;
+            UpdateSubmitRequestEnabled();
+
+            rejectionNotesTxtBx.Text = string.Empty;
+            approvalStatusLabel.Text = string.Empty;
+            approvalHintLabel.Text = "Select a pending request above.";
+            approveBtn.Enabled = false;
+            rejectBtn.Enabled = false;
+        }
+
+        private void SelectCustomerRowById(int customerId)
+        {
+            foreach (DataGridViewRow row in customersGrid.Rows)
+            {
+                if (row.DataBoundItem is Customer c && c.CustomerId == customerId)
+                {
+                    customersGrid.ClearSelection();
+                    row.Selected = true;
+                    customersGrid.CurrentCell = row.Cells[0];
+                    _selectedCustomer = c;
+                    RefreshDrawer();
+                    break;
+                }
+            }
+        }
+
+        private void ConfigureCustomersGridColumns()
+        {
+            customersGrid.Columns.Clear();
+            customersGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Customer.CustomerId),
+                DataPropertyName = nameof(Customer.CustomerId),
+                HeaderText = "ID",
+                Width = 60,
+            });
+            customersGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Customer.FullName),
+                DataPropertyName = nameof(Customer.FullName),
+                HeaderText = "Name",
+                Width = 180,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            });
+            customersGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Customer.ContactNumber),
+                DataPropertyName = nameof(Customer.ContactNumber),
+                HeaderText = "Contact",
+                Width = 120,
+            });
+            customersGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Customer.PointsBalance),
+                DataPropertyName = nameof(Customer.PointsBalance),
+                HeaderText = "Points",
+                Width = 80,
+            });
+            customersGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Tier", // unbound — Tier is computed by CustomerController, not stored on Customer; populated via CellFormatting
+                HeaderText = "Tier",
+                Width = 90,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+            });
+            customersGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Customer.LastVisitDate),
+                DataPropertyName = nameof(Customer.LastVisitDate),
+                HeaderText = "Last Visit",
+                Width = 110,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+            });
+        }
+
+        private void ConfigureOrderHistoryGridColumns()
+        {
+            orderHistoryGrid.Columns.Clear();
+            orderHistoryGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Order.OrderId),
+                DataPropertyName = nameof(Order.OrderId),
+                HeaderText = "Order #",
+                Width = 60,
+            });
+            orderHistoryGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Order.OrderDate),
+                DataPropertyName = nameof(Order.OrderDate),
+                HeaderText = "Date",
+                Width = 90,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+            });
+            orderHistoryGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Order.TotalAmount),
+                DataPropertyName = nameof(Order.TotalAmount),
+                HeaderText = "Total",
+                Width = 90,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "₱#,##0.00", Alignment = DataGridViewContentAlignment.MiddleRight },
+            });
+            // Status column intentionally dropped — every row here is a completed sale (it's
+            // the only kind logged in history), so a status column would say "Completed" on
+            // every single row.
+        }
+
+        private void ConfigureLedgerGridColumns()
+        {
+            ledgerGrid.Columns.Clear();
+            ledgerGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointLedger.Timestamp),
+                DataPropertyName = nameof(PointLedger.Timestamp),
+                HeaderText = "Date",
+                Width = 90,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+            });
+            ledgerGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointLedger.Type),
+                DataPropertyName = nameof(PointLedger.Type),
+                HeaderText = "Type",
+                Width = 80,
+            });
+            ledgerGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointLedger.PointsChange),
+                DataPropertyName = nameof(PointLedger.PointsChange),
+                HeaderText = "Pts",
+                Width = 60,
+            });
+            ledgerGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointLedger.Reason),
+                DataPropertyName = nameof(PointLedger.Reason),
+                HeaderText = "Reason",
+                Width = 100,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            });
+        }
+
+        private void ConfigureAdjustmentRequestsGridColumns()
+        {
+            // Kept deliberately compact — the list only ever holds Pending requests (see
+            // CustomerController.GetPendingAdjustmentRequests; once decided, an approval
+            // lands in the ledger above and a rejection just ends here), so Requester/
+            // Approver/Reason would be redundant. Reason is still surfaced via
+            // approvalHintLabel when a row is selected for approve/reject.
+            adjustmentRequestsGrid.Columns.Clear();
+            adjustmentRequestsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointAdjustmentRequest.RequestedAt),
+                DataPropertyName = nameof(PointAdjustmentRequest.RequestedAt),
+                HeaderText = "Date",
+                Width = 110,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd" },
+            });
+            adjustmentRequestsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointAdjustmentRequest.PointsChange),
+                DataPropertyName = nameof(PointAdjustmentRequest.PointsChange),
+                HeaderText = "Pts",
+                Width = 70,
+            });
+            adjustmentRequestsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(PointAdjustmentRequest.Status),
+                DataPropertyName = nameof(PointAdjustmentRequest.Status),
+                HeaderText = "Status",
+                Width = 90,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            });
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/FeedbackManagementView.cs =====
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services;
+using CRM_Morcaffein.Session;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// The Feedback tab: a boxed table (search top-left, "+ Log Feedback" top-right, same
+    /// layout as the Customers tab) listing every ticket ever logged, and a left-side
+    /// drawer showing full ticket detail for whichever ticket is selected.
+    ///
+    /// This is the staff console — staff log feedback and view its status. Resolving,
+    /// dismissing, or awarding bonus points is a manager decision that belongs on a
+    /// different surface, so no decision UI lives here.
+    ///
+    /// MVC note: this View owns no business logic and holds no bindable state objects —
+    /// it calls FeedbackController methods directly and uses the returned data to update
+    /// its own controls. _selectedTicket is just plain in-progress UI state (which row is
+    /// highlighted), not a Model concern.
+    /// </summary>
+    public partial class FeedbackManagementView : UserControl
+    {
+        private readonly FeedbackController _controller;
+        private readonly BindingSource _ticketsBindingSource = new();
+
+        private Feedback? _selectedTicket;
+
+        public FeedbackManagementView()
+            : this(ServiceRegistry.Customers, ServiceRegistry.Feedback)
+        {
+        }
+
+        public FeedbackManagementView(ICustomerService customerService, IFeedbackService feedbackService)
+        {
+            _controller = new FeedbackController(feedbackService, customerService);
+            InitializeComponent();
+
+            ConfigureTicketsGridColumns();
+
+            ticketsGrid.DataSource = _ticketsBindingSource;
+            ticketsGrid.SelectionChanged += TicketsGrid_SelectionChanged;
+            ticketsGrid.CellFormatting += TicketsGrid_CellFormatting;
+
+            searchTxtBx.TextChanged += (s, e) => ReloadTickets();
+            logFeedbackBtn.Click += (s, e) => OpenLogFeedbackModal();
+
+            // logFeedbackBtn hugs the card's right edge — see the identical note in
+            // CustomerManagementView.PositionActionButton for why this isn't done via Anchor.
+            cardHeaderPanel.Resize += (s, e) => PositionActionButton();
+            PositionActionButton();
+
+            ReloadTickets();
+        }
+
+        private void PositionActionButton()
+        {
+            logFeedbackBtn.Left = cardHeaderPanel.ClientSize.Width - logFeedbackBtn.Width - 16;
+            logFeedbackBtn.Top = 14;
+        }
+
+        private void ReloadTickets()
+        {
+            var previousId = _selectedTicket?.TicketId;
+            var tickets = _controller.GetTickets(searchTxtBx.Text);
+            _ticketsBindingSource.DataSource = tickets.ToList();
+
+            var stillPresent = previousId.HasValue ? tickets.FirstOrDefault(t => t.TicketId == previousId.Value) : null;
+            if (stillPresent != null)
+            {
+                SelectTicketRowById(stillPresent.TicketId);
+            }
+            else
+            {
+                _selectedTicket = null;
+                RefreshDrawer();
+            }
+        }
+
+        private void TicketsGrid_SelectionChanged(object? sender, EventArgs e)
+        {
+            _selectedTicket = ticketsGrid.CurrentRow?.DataBoundItem as Feedback;
+            RefreshDrawer();
+        }
+
+        private void TicketsGrid_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+        {
+            if (ticketsGrid.Rows[e.RowIndex].DataBoundItem is not Feedback ticket)
+                return;
+
+            var columnName = ticketsGrid.Columns[e.ColumnIndex].Name;
+            if (columnName == "CustomerName")
+            {
+                e.Value = ticket.Customer?.FullName ?? "—";
+                e.FormattingApplied = true;
+            }
+            else if (columnName == "RatingDisplay")
+            {
+                e.Value = $"{ticket.Rating}/5";
+                e.FormattingApplied = true;
+            }
+        }
+
+        private void OpenLogFeedbackModal()
+        {
+            using var form = new FrmLogFeedback(_controller, EmployeeSession.Current!.EmployeeId);
+
+            if (form.ShowDialog(FindForm()) == DialogResult.OK && form.CreatedFeedback != null)
+            {
+                ReloadTickets();
+                SelectTicketRowById(form.CreatedFeedback.TicketId);
+            }
+        }
+
+        private void RefreshDrawer()
+        {
+            var ticket = _selectedTicket;
+            if (ticket is null)
+            {
+                drawerEmptyLabel.Visible = true;
+                drawerContentPanel.Visible = false;
+                return;
+            }
+
+            drawerEmptyLabel.Visible = false;
+            drawerContentPanel.Visible = true;
+
+            ticketCustomerLabel.Text = ticket.Customer?.FullName ?? "—";
+            ticketRatingLabel.Text = new string('★', ticket.Rating) + new string('☆', 5 - ticket.Rating);
+            ticketCategoryLabel.Text = $"Category: {ticket.Category}";
+            ticketStatusLabel.Text = $"Status: {ticket.Status}";
+            ticketDateLabel.Text = $"Logged {ticket.DateLogged:yyyy-MM-dd HH:mm} by {ticket.LoggedByEmployee?.FullName ?? "—"}";
+            ticketNotesLabel.Text = string.IsNullOrWhiteSpace(ticket.StaffNotes) ? "(no notes)" : ticket.StaffNotes;
+        }
+
+        private void SelectTicketRowById(int ticketId)
+        {
+            foreach (DataGridViewRow row in ticketsGrid.Rows)
+            {
+                if (row.DataBoundItem is Feedback f && f.TicketId == ticketId)
+                {
+                    ticketsGrid.ClearSelection();
+                    row.Selected = true;
+                    ticketsGrid.CurrentCell = row.Cells[0];
+                    _selectedTicket = f;
+                    RefreshDrawer();
+                    break;
+                }
+            }
+        }
+
+        private void ConfigureTicketsGridColumns()
+        {
+            ticketsGrid.Columns.Clear();
+            ticketsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Feedback.TicketId),
+                DataPropertyName = nameof(Feedback.TicketId),
+                HeaderText = "Ticket #",
+                Width = 70,
+            });
+            ticketsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "CustomerName", // unbound — Customer is a nav property, populated via CellFormatting
+                HeaderText = "Customer",
+                Width = 160,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+            });
+            ticketsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "RatingDisplay", // unbound — via CellFormatting
+                HeaderText = "Rating",
+                Width = 60,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+            });
+            ticketsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Feedback.Category),
+                DataPropertyName = nameof(Feedback.Category),
+                HeaderText = "Category",
+                Width = 90,
+            });
+            ticketsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Feedback.Status),
+                DataPropertyName = nameof(Feedback.Status),
+                HeaderText = "Status",
+                Width = 90,
+            });
+            ticketsGrid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = nameof(Feedback.DateLogged),
+                DataPropertyName = nameof(Feedback.DateLogged),
+                HeaderText = "Logged",
+                Width = 130,
+                DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm" },
+            });
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/ProductCardControl.cs =====
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// A single drink card: image placeholder + name + "from ₱price", with a row of size
+    /// quick-add buttons pinned to the bottom (one per Product.ProductSizes — tapping one
+    /// adds that size, qty 1, no modifiers, straight to the cart). Clicking the card body
+    /// itself (not a size button) opens the full customizer modal instead, for picking
+    /// modifiers or a quantity other than 1. Image loading (LocalImagePath / ImageUrl /
+    /// placeholder) is deliberately left as a simple placeholder glyph for this pass — swap
+    /// the placeholder paint for a real Image draw once product photography exists.
+    /// </summary>
+    public class ProductCardControl : Panel
+    {
+        public Product Product { get; }
+
+        /// <summary>Card body clicked (not a size button) — host opens the full customizer modal.</summary>
+        public event EventHandler? CardClicked;
+
+        /// <summary>A size button was tapped — host adds that size directly to the cart, qty 1, no modifiers.</summary>
+        public event EventHandler<ProductSize>? SizeQuickAdded;
+
+        private const int SizeRowHeight = 26;
+
+        // Standard S/M/L/XL progression by position, regardless of each product's actual
+        // SizeName text (e.g. "Regular (12oz)") — simpler and more scannable at a glance
+        // than deriving a letter from the name, and matches how a real POS keypad reads.
+        private static readonly string[] SizeLabels = { "S", "M", "L", "XL" };
+
+        public ProductCardControl(Product product)
+        {
+            Product = product;
+            Size = new Size(150, 156);
+            Margin = new Padding(8);
+            BackColor = BrandPalette.SurfacePrimary;
+            Cursor = Cursors.Hand;
+
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+
+            Click += (s, e) => CardClicked?.Invoke(this, EventArgs.Empty);
+            MouseEnter += (s, e) => { BackColor = BrandPalette.Tint90; Invalidate(); };
+            MouseLeave += (s, e) => { BackColor = BrandPalette.SurfacePrimary; Invalidate(); };
+
+            BuildSizeRow();
+        }
+
+        private void BuildSizeRow()
+        {
+            var sizes = Product.ProductSizes.ToList();
+            if (sizes.Count == 0)
+                return;
+
+            var sizeRow = new Panel { Dock = DockStyle.Bottom, Height = SizeRowHeight, BackColor = BrandPalette.Brand };
+            var buttonWidth = Width / sizes.Count;
+
+            for (int i = 0; i < sizes.Count; i++)
+            {
+                var size = sizes[i];
+                var btn = new Button
+                {
+                    Text = i < SizeLabels.Length ? SizeLabels[i] : (i + 1).ToString(),
+                    Location = new Point(i * buttonWidth, 0),
+                    Size = new Size(i == sizes.Count - 1 ? Width - i * buttonWidth : buttonWidth, SizeRowHeight),
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = BrandPalette.Brand,
+                    ForeColor = BrandPalette.White,
+                    Font = BrandPalette.BrandFontBold(8f),
+                    Cursor = Cursors.Hand,
+                };
+                btn.FlatAppearance.BorderSize = 0;
+                btn.FlatAppearance.BorderColor = BrandPalette.White;
+                btn.Click += (s, e) => SizeQuickAdded?.Invoke(this, size);
+                sizeRow.Controls.Add(btn);
+            }
+
+            Controls.Add(sizeRow);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            using var borderPen = new Pen(BrandPalette.Border);
+            g.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
+
+            // Placeholder "image" band — a soft brand tint block where a product photo would go.
+            var imageRect = new Rectangle(8, 8, Width - 16, 64);
+            using (var imgBrush = new SolidBrush(BrandPalette.Tint75))
+                g.FillRectangle(imgBrush, imageRect);
+
+            using var iconFont = BrandPalette.BrandFontBold(16f);
+            var iconText = "☕";
+            var iconSize = g.MeasureString(iconText, iconFont);
+            g.DrawString(iconText, iconFont, new SolidBrush(BrandPalette.Tint25),
+                imageRect.X + (imageRect.Width - iconSize.Width) / 2,
+                imageRect.Y + (imageRect.Height - iconSize.Height) / 2);
+
+            using var nameFont = BrandPalette.BrandFontBold(9.5f);
+            var nameRect = new RectangleF(8, imageRect.Bottom + 6, Width - 16, 32);
+            g.DrawString(Product.ProductName, nameFont, new SolidBrush(BrandPalette.NeutralText), nameRect);
+
+            using var priceFont = BrandPalette.BrandFontRegular(9f);
+            g.DrawString($"from ₱{Product.BasePrice:0}", priceFont, new SolidBrush(BrandPalette.NeutralTextMuted),
+                8, Height - SizeRowHeight - 20);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/StarRatingControl.cs =====
+using System.ComponentModel;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Simple 1-5 click-to-rate star control. No hover preview yet — click sets the value directly.</summary>
+    public partial class StarRatingControl : UserControl
+    {
+        private int _rating;
+
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int Rating
+        {
+            get => _rating;
+            set
+            {
+                var clamped = Math.Clamp(value, 0, 5);
+                if (_rating == clamped)
+                    return;
+
+                _rating = clamped;
+                Redraw();
+                RatingChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public event EventHandler? RatingChanged;
+
+        public StarRatingControl()
+        {
+            InitializeComponent();
+
+            foreach (var star in _stars)
+            {
+                star.Click += (s, e) => Rating = (int)((Label)s!).Tag!;
+                star.MouseEnter += (s, e) => Preview((int)((Label)s!).Tag!);
+                star.MouseLeave += (s, e) => Redraw();
+            }
+        }
+
+        private void Preview(int hoverValue)
+        {
+            for (int i = 0; i < _stars.Length; i++)
+            {
+                var filled = i < hoverValue;
+                _stars[i].Text = filled ? "★" : "☆";
+                _stars[i].ForeColor = filled ? BrandPalette.Brand : BrandPalette.RatingInactive;
+            }
+        }
+
+        private void Redraw() => Preview(_rating);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/TransactionView.cs =====
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.Services;
+using CRM_Morcaffein.Session;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// The Transactions/POS tab. A left column identifies the customer by ID or contact
+    /// number only (a single search box, not a browsable directory), a middle area lists
+    /// drink cards with a category filter, and a right column holds the running Order and
+    /// the Payables/checkout summary with its own "Log Sale" button — scoped to that
+    /// column's width, not the whole screen. Picking a customer is what starts the
+    /// transaction (an Order always needs a real Customer under the hood), but nothing
+    /// blocks the rest of the screen while you search.
+    ///
+    /// MVC note: this View owns no business logic — it calls TransactionController
+    /// methods directly and reads Model state (Order/Customer/totals) back off the
+    /// Controller to update its own controls. _selectedCategory/_selectedPromoForMenu etc.
+    /// are just plain in-progress UI state, not Model concerns.
+    /// </summary>
+    public class TransactionView : UserControl
+    {
+        private readonly ICustomerService _customerService;
+        private readonly IOrderService _orderService;
+        private readonly IProductCatalogService _catalogService;
+        private readonly ICampaignService _campaignService;
+
+        private TransactionController? _controller;
+        private string _selectedCategory = string.Empty;
+
+        // ----- Left column: identify customer by ID/number, then their profile + promo -----
+        private TextBox _customerSearchTxtBx = null!;
+        private Label _customerSearchErrorLabel = null!;
+        private Panel _customerProfilePanel = null!;
+        private Label _customerProfileNameLabel = null!;
+        private Label _customerProfileDetailLabel = null!;
+        private Button _promoMenuBtn = null!;
+
+        // ----- Middle: drinks -----
+        private TextBox _productSearchTxtBx = null!;
+        private ComboBox _categoryCombo = null!;
+        private FlowLayoutPanel _productsFlowPanel = null!;
+
+        // ----- Right column: order + payables -----
+        private FlowLayoutPanel _cartLinesPanel = null!;
+        private Label _cartEmptyLabel = null!;
+        private Label _subTotalValueLabel = null!;
+        private Label _discountValueLabel = null!;
+        private Label _vatValueLabel = null!;
+        private Label _pwdSeniorValueLabel = null!;
+        private Label _totalValueLabel = null!;
+        private Label _cartStatusLabel = null!;
+        private Button _logSaleBtn = null!;
+
+        private const string AllCategoriesOption = "All Categories";
+        private const decimal VatRate = 0.12m;
+
+        public TransactionView() : this(ServiceRegistry.Customers, ServiceRegistry.Orders, ServiceRegistry.Products, ServiceRegistry.Campaigns)
+        {
+        }
+
+        public TransactionView(ICustomerService customerService, IOrderService orderService, IProductCatalogService catalogService, ICampaignService campaignService)
+        {
+            _customerService = customerService;
+            _orderService = orderService;
+            _catalogService = catalogService;
+            _campaignService = campaignService;
+
+            BuildLayout();
+            BuildCategoryOptions();
+            RefreshSummary();
+        }
+
+        // =====================================================================
+        // LAYOUT CONSTRUCTION
+        // =====================================================================
+
+        private void BuildLayout()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = BrandPalette.SurfaceSecondary;
+
+            var cardOuterPanel = new Panel { Dock = DockStyle.Fill, BackColor = BrandPalette.SurfaceSecondary, Padding = new Padding(24) };
+            var tableCardPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = BrandPalette.SurfacePrimary,
+                // BorderStyle intentionally NOT set — the outer card used to draw a FixedSingle
+                // border, which doubled up with the Order box's own border on the right edge and
+                // read as a thick black seam. The Order/Payables/Log Sale boxes keep their own
+                // borders and the column padding insets them from the card edge.
+            };
+
+            var middleArea = BuildDrinksArea();
+            var leftColumn = BuildCustomerColumn();
+            var rightColumn = BuildOrderColumn();
+
+            tableCardPanel.Controls.Add(middleArea);
+            tableCardPanel.Controls.Add(leftColumn);
+            tableCardPanel.Controls.Add(rightColumn);
+
+            cardOuterPanel.Controls.Add(tableCardPanel);
+            Controls.Add(cardOuterPanel);
+        }
+
+        private Panel BuildCustomerColumn()
+        {
+            var column = new Panel
+            {
+                Dock = DockStyle.Left,
+                Width = 260,
+                BackColor = BrandPalette.SurfaceCard,
+                Padding = new Padding(12),
+            };
+
+            // ----- Promo picker: a single button. Its label shows the currently-applied promo
+            // (or "Select a Promo" when none is applied) and clicking it opens the eligible-
+            // promo menu. No ComboBox — the button is both the state display AND the action,
+            // so there's no redundant second control doing the same job.
+            var promoRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 36,
+                BackColor = BrandPalette.SurfaceCard,
+            };
+
+            _promoMenuBtn = new Button
+            {
+                Text = "Select a Promo ▾",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonSecondaryFill,
+                ForeColor = BrandPalette.ButtonSecondaryText,
+                Font = BrandPalette.BrandFontRegular(9f),
+                Cursor = Cursors.Hand,
+                Enabled = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(10, 0, 0, 0),
+            };
+            _promoMenuBtn.FlatAppearance.BorderSize = 0;
+            _promoMenuBtn.Click += (s, e) => ShowPromoMenu();
+            ButtonStyler.TrackEnabledState(_promoMenuBtn);
+
+            promoRow.Controls.Add(_promoMenuBtn);
+
+            // ----- Search row: textbox fills, Go button docked right -----
+            var searchRow = new Panel { Dock = DockStyle.Top, Height = 28 };
+
+            var searchBtn = new Button
+            {
+                Text = "Go",
+                Width = 40,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonSecondaryFill,
+                ForeColor = BrandPalette.ButtonSecondaryText,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                Cursor = Cursors.Hand,
+            };
+            searchBtn.FlatAppearance.BorderSize = 0;
+            searchBtn.Click += (s, e) => RunCustomerSearch();
+
+            _customerSearchTxtBx = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                PlaceholderText = "Customer ID or phone",
+                Font = BrandPalette.BrandFontRegular(9f),
+                BorderStyle = BorderStyle.FixedSingle,
+            };
+            _customerSearchTxtBx.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Enter) { RunCustomerSearch(); e.SuppressKeyPress = true; }
+            };
+
+            searchRow.Controls.Add(_customerSearchTxtBx);
+            searchRow.Controls.Add(searchBtn);
+
+            _customerSearchErrorLabel = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 32,
+                Font = BrandPalette.BrandFontRegular(8f),
+                ForeColor = BrandPalette.StatusNegativeFill,
+            };
+
+            // ----- Customer profile panel (shown once a search succeeds) -----
+            _customerProfilePanel = new Panel { Dock = DockStyle.Top, Height = 72, Visible = false };
+            _customerProfileNameLabel = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 22,
+                Font = BrandPalette.BrandFontBold(11f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+            _customerProfileDetailLabel = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 44,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+            _customerProfilePanel.Controls.Add(_customerProfileDetailLabel);
+            _customerProfilePanel.Controls.Add(_customerProfileNameLabel);
+
+            // Reverse add-order for Top-docked siblings: last added is topmost, so add profile
+            // first (bottom of stack), then error, then searchRow last (topmost). promoRow is
+            // Bottom-docked, so it claims the column's bottom edge regardless of add order.
+            column.Controls.Add(_customerProfilePanel);
+            column.Controls.Add(_customerSearchErrorLabel);
+            column.Controls.Add(searchRow);
+            column.Controls.Add(promoRow);
+
+            return column;
+        }
+
+        private Panel BuildDrinksArea()
+        {
+            var area = new Panel { Dock = DockStyle.Fill, BackColor = BrandPalette.SurfacePrimary };
+
+            var header = new Panel { Dock = DockStyle.Top, Height = 100, Padding = new Padding(16, 14, 16, 10) };
+
+            // ----- Search row -----
+            var searchRow = new Panel { Dock = DockStyle.Top, Height = 34, Margin = new Padding(0, 0, 0, 12) };
+            _productSearchTxtBx = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "Search drinks by name", Font = BrandPalette.BrandFontRegular(10f), BorderStyle = BorderStyle.FixedSingle };
+            _productSearchTxtBx.TextChanged += (s, e) => RefreshProductsPanel();
+            searchRow.Controls.Add(_productSearchTxtBx);
+
+            // ----- Sort row -----
+            var sortRow = new Panel { Dock = DockStyle.Top, Height = 34 };
+
+            var drinksLabel = new Label
+            {
+                Text = "Drinks",
+                AutoSize = true,
+                Font = BrandPalette.BrandFontBold(13f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+            var sortLabel = new Label
+            {
+                Text = "Sort by Category:",
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+            _categoryCombo = new ComboBox
+            {
+                Size = new Size(180, 30),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+            };
+            _categoryCombo.SelectedIndexChanged += (s, e) =>
+            {
+                if (_categoryCombo.SelectedItem is not string category) return;
+                _selectedCategory = category == AllCategoriesOption ? string.Empty : category;
+                RefreshProductsPanel();
+            };
+
+            // Measure both labels explicitly — AutoSize labels report Right=0 until parented,
+            // which is why the previous offset-based positioning collapsed the gap. Both Left
+            // values are computed from measured widths, so the combo can never overlap the label.
+            var drinksWidth = TextRenderer.MeasureText(drinksLabel.Text, drinksLabel.Font).Width;
+            var sortLabelWidth = TextRenderer.MeasureText(sortLabel.Text, sortLabel.Font).Width;
+
+            drinksLabel.Left = 0;
+            drinksLabel.Top = 0;
+
+            sortLabel.Left = drinksWidth + 24;
+            sortLabel.Top = (sortRow.Height - sortLabel.Height) / 2 + 2;
+
+            _categoryCombo.Left = drinksWidth + 24 + sortLabelWidth + 14;
+            _categoryCombo.Top = (sortRow.Height - _categoryCombo.Height) / 2;
+
+            sortRow.Controls.Add(drinksLabel);
+            sortRow.Controls.Add(sortLabel);
+            sortRow.Controls.Add(_categoryCombo);
+
+            var divider = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = BrandPalette.Border };
+
+            header.Controls.Add(sortRow);
+            header.Controls.Add(searchRow);
+            header.Controls.Add(divider);
+
+            _productsFlowPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,
+                AutoScroll = true,
+                Padding = new Padding(12),
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            area.Controls.Add(_productsFlowPanel);
+            area.Controls.Add(header);
+
+            return area;
+        }
+
+        private Panel BuildOrderColumn()
+        {
+            // Padding on the column itself insets ALL three child boxes (Order, Payables, Log Sale)
+            // uniformly from the card's edges.
+            var column = new Panel
+            {
+                Dock = DockStyle.Right,
+                Width = 380,
+                BackColor = BrandPalette.SurfacePrimary,
+                Padding = new Padding(10, 10, 10, 10),
+            };
+
+            var orderBox = BuildOrderBox();
+            var payablesBox = BuildPayablesBox();
+            var logSaleBox = BuildLogSaleBox();
+
+            column.Controls.Add(orderBox);
+            column.Controls.Add(payablesBox);
+            column.Controls.Add(logSaleBox);
+
+            return column;
+        }
+
+        private Panel BuildLogSaleBox()
+        {
+            var box = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 56,
+                Margin = new Padding(10, 0, 10, 10),
+                Padding = new Padding(10),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            _logSaleBtn = new Button
+            {
+                Text = "Log Sale",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(10.5f),
+                Enabled = false,
+            };
+            _logSaleBtn.FlatAppearance.BorderSize = 0;
+            _logSaleBtn.Click += (s, e) => CompleteSale();
+            ButtonStyler.TrackEnabledState(_logSaleBtn);
+
+            box.Controls.Add(_logSaleBtn);
+            return box;
+        }
+
+        private Panel BuildOrderBox()
+        {
+            var box = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 0, 0, 10),   // gap to Payables below; outer inset comes from the column's Padding
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            var header = new Label
+            {
+                Text = "Order",
+                Dock = DockStyle.Top,
+                Height = 28,
+                Padding = new Padding(10, 6, 0, 0),
+                Font = BrandPalette.BrandFontBold(10f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = BrandPalette.Border };
+
+            _cartLinesPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(8, 6, 8, 6),
+            };
+
+            _cartEmptyLabel = new Label
+            {
+                Text = "No items yet.\nTap a drink to add it.",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+            _cartLinesPanel.Controls.Add(_cartEmptyLabel);
+
+            box.Controls.Add(_cartLinesPanel);
+            box.Controls.Add(divider);
+            box.Controls.Add(header);
+
+            return box;
+        }
+
+        private Panel BuildPayablesBox()
+        {
+            var box = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 254,
+                Margin = new Padding(10, 0, 10, 10),
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = BrandPalette.SurfacePrimary,
+                Padding = new Padding(14, 12, 14, 12),
+            };
+
+            var header = new Label
+            {
+                Text = "Payables",
+                Dock = DockStyle.Top,
+                Height = 24,
+                Font = BrandPalette.BrandFontBold(11.5f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            _cartStatusLabel = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 20,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.StatusNegativeFill,
+            };
+
+            var summaryTable = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5 };
+            summaryTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55f));
+            summaryTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45f));
+
+            Label MakeCaption(string text) => new() { Text = text, Dock = DockStyle.Fill, Font = BrandPalette.BrandFontRegular(9.5f), ForeColor = BrandPalette.NeutralTextMuted, TextAlign = ContentAlignment.MiddleLeft };
+            Label MakeValue() => new() { Text = "₱0.00", Dock = DockStyle.Fill, Font = BrandPalette.BrandFontBold(11f), ForeColor = BrandPalette.NeutralText, TextAlign = ContentAlignment.MiddleRight };
+
+            _subTotalValueLabel = MakeValue();
+            _discountValueLabel = MakeValue();
+            _vatValueLabel = MakeValue();
+            _pwdSeniorValueLabel = MakeValue();
+            _totalValueLabel = MakeValue();
+            _totalValueLabel.ForeColor = BrandPalette.Brand;
+            _totalValueLabel.Font = BrandPalette.BrandFontBold(15f);
+
+            summaryTable.Controls.Add(MakeCaption("Subtotal"), 0, 0);
+            summaryTable.Controls.Add(_subTotalValueLabel, 1, 0);
+            summaryTable.Controls.Add(MakeCaption("Discount"), 0, 1);
+            summaryTable.Controls.Add(_discountValueLabel, 1, 1);
+            summaryTable.Controls.Add(MakeCaption("VAT (12%)"), 0, 2);
+            summaryTable.Controls.Add(_vatValueLabel, 1, 2);
+            summaryTable.Controls.Add(MakeCaption("PWD/Senior Disc."), 0, 3);
+            summaryTable.Controls.Add(_pwdSeniorValueLabel, 1, 3);
+            summaryTable.Controls.Add(MakeCaption("Total"), 0, 4);
+            summaryTable.Controls.Add(_totalValueLabel, 1, 4);
+
+            box.Controls.Add(summaryTable);
+            box.Controls.Add(_cartStatusLabel);
+            box.Controls.Add(header);
+
+            return box;
+        }
+
+        // =====================================================================
+        // CUSTOMER SELECTION
+        // =====================================================================
+
+        private void RunCustomerSearch()
+        {
+            var query = _customerSearchTxtBx.Text.Trim();
+            if (string.IsNullOrEmpty(query))
+                return;
+
+            var match = _customerService.FindByPhoneOrId(query);
+            if (match is null)
+            {
+                _customerSearchErrorLabel.Text = $"No customer found for \"{query}\".";
+                _customerProfilePanel.Visible = false;
+                return;
+            }
+
+            _customerSearchErrorLabel.Text = string.Empty;
+            ShowCustomerProfile(match);
+            SelectCustomer(match);
+        }
+
+        private void ShowCustomerProfile(Customer customer)
+        {
+            _customerProfileNameLabel.Text = customer.FullName;
+            _customerProfileDetailLabel.Text = $"{CustomerController.GetTier(customer.PointsBalance)} Tier   •   {customer.PointsBalance} pts\n{customer.ContactNumber}";
+            _customerProfilePanel.Visible = true;
+        }
+
+        private void SelectCustomer(Customer customer)
+        {
+            var employeeId = EmployeeSession.Current?.EmployeeId
+                ?? throw new InvalidOperationException("No employee session — the Transaction view requires a logged-in employee.");
+
+            // Search-and-Go = start a fresh transaction. If the existing cart has items, confirm
+            // first — a staff member mid-sale who mistypes a customer ID shouldn't lose their work
+            // silently. Empty carts (or no Controller yet) just get replaced without asking.
+            if (_controller is not null && _controller.CartItems.Count > 0)
+            {
+                var currentCustomerName = _controller.Customer.FullName;
+                var confirm = MessageBox.Show(
+                    FindForm(),
+                    $"Discard the in-progress order for {currentCustomerName} and start a new one for {customer.FullName}?",
+                    "Start New Transaction",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (confirm != DialogResult.Yes)
+                {
+                    _customerSearchTxtBx.Text = _controller.Customer.CustomerId.ToString();
+                    return;
+                }
+            }
+
+            _controller = new TransactionController(_orderService, _catalogService, _campaignService, _customerService, customer, employeeId);
+
+            RefreshProductsPanel();
+            RefreshCartLines();
+            RefreshSummary();
+        }
+
+        // =====================================================================
+        // DRINKS / CART / CHECKOUT
+        // =====================================================================
+
+        /// <summary>
+        /// Opens the "choose a promo" menu above the promo button. Menu items apply a promo on
+        /// click; a "Clear applied promo" item appears when one is currently applied. The button
+        /// label is refreshed from RefreshPromoButton() after any change, so the button always
+        /// reflects the current state.
+        /// </summary>
+        private void ShowPromoMenu()
+        {
+            if (_controller is null)
+                return;
+
+            var menu = new ContextMenuStrip();
+
+            if (_controller.Order.CampaignRedeems.Count > 0)
+            {
+                var clear = menu.Items.Add("Clear applied promo");
+                clear.Font = BrandPalette.BrandFontBold(9f);
+                clear.Click += (s, e) =>
+                {
+                    _controller.ClearPromos();
+                    RefreshSummary();
+                    RefreshPromoButton();
+                };
+                menu.Items.Add(new ToolStripSeparator());
+            }
+
+            var eligiblePromos = _controller.GetEligiblePromos();
+            if (eligiblePromos.Count == 0)
+            {
+                var none = menu.Items.Add("No promos available for this order");
+                none.Enabled = false;
+            }
+            else
+            {
+                foreach (var campaign in eligiblePromos)
+                {
+                    var alreadyApplied = _controller.Order.CampaignRedeems
+                        .Any(r => r.CampaignId == campaign.CampaignId);
+
+                    var label = campaign.DiscountType == "Percentage"
+                        ? $"{campaign.PromoName} — {campaign.DiscountValue:0.##}% off"
+                        : $"{campaign.PromoName} — ₱{campaign.DiscountValue:0.##} off";
+                    if (alreadyApplied)
+                        label += "  (applied)";
+
+                    var item = menu.Items.Add(label);
+                    item.Enabled = !alreadyApplied;
+                    item.Click += (s, e) =>
+                    {
+                        try
+                        {
+                            _controller.ApplyPromo(campaign);
+                            RefreshSummary();
+                            RefreshPromoButton();
+                        }
+                        catch (Exception ex)
+                        {
+                            ShowCartStatus(ex.Message);
+                        }
+                    };
+                }
+            }
+
+            // The button sits at the bottom of the column, so the menu opens above it — dropping
+            // it downward would fall off the window.
+            menu.Show(_promoMenuBtn, new Point(0, -menu.PreferredSize.Height));
+        }
+
+        /// <summary>
+        /// Syncs the promo button's label with the currently-applied promo (if any) and
+        /// enables/disables it based on whether there's an active transaction. Called from
+        /// RefreshSummary (the funnel for all cart-state changes) and from ShowPromoMenu after
+        /// apply/clear so the label updates immediately.
+        /// </summary>
+        private void RefreshPromoButton()
+        {
+            if (_controller is null)
+            {
+                _promoMenuBtn.Text = "Select a Promo ▾";
+                _promoMenuBtn.Enabled = false;
+                return;
+            }
+
+            var applied = _controller.Order.CampaignRedeems.FirstOrDefault();
+
+            if (applied is null)
+            {
+                _promoMenuBtn.Text = "Select a Promo ▾";
+            }
+            else
+            {
+                // Look up the campaign's display name from the eligible list first; if it's
+                // since become ineligible, fall back to the campaign service so the label
+                // still reads right.
+                var campaign = _controller.GetEligiblePromos()
+                                   .FirstOrDefault(c => c.CampaignId == applied.CampaignId)
+                               ?? _campaignService.GetById(applied.CampaignId);
+
+                var name = campaign?.PromoName ?? $"Promo #{applied.CampaignId}";
+                _promoMenuBtn.Text = $"{name} ▾";
+            }
+
+            _promoMenuBtn.Enabled = true;
+        }
+
+        private void RefreshSummary()
+        {
+            RefreshPromoButton();
+
+            if (_controller is null)
+            {
+                _subTotalValueLabel.Text = "₱0.00";
+                _discountValueLabel.Text = "₱0.00";
+                _vatValueLabel.Text = "₱0.00";
+                _pwdSeniorValueLabel.Text = "₱0.00";
+                _totalValueLabel.Text = "₱0.00";
+                _logSaleBtn.Enabled = false;
+                return;
+            }
+
+            _subTotalValueLabel.Text = $"₱{_controller.SubTotal:0.00}";
+            _discountValueLabel.Text = $"₱{_controller.TotalDiscount:0.00}";
+            _vatValueLabel.Text = $"₱{_controller.TotalAmount * VatRate:0.00}";
+            _pwdSeniorValueLabel.Text = "₱0.00";
+            _totalValueLabel.Text = $"₱{_controller.TotalAmount:0.00}";
+            _logSaleBtn.Enabled = _controller.HasItems;
+        }
+
+        private void BuildCategoryOptions()
+        {
+            _categoryCombo.Items.Clear();
+            _categoryCombo.Items.Add(AllCategoriesOption);
+            foreach (var category in _catalogService.GetCategories())
+                _categoryCombo.Items.Add(category);
+            _categoryCombo.SelectedIndex = 0;
+        }
+
+        private void RefreshProductsPanel()
+        {
+            _productsFlowPanel.Controls.Clear();
+            if (_controller is null) return;
+
+            var products = _controller.GetProducts(_selectedCategory, _productSearchTxtBx.Text);
+            foreach (var product in products)
+            {
+                var card = new ProductCardControl(product);
+                card.CardClicked += (s, e) => OpenCustomizerForNewItem(product);
+                card.SizeQuickAdded += (s, size) => QuickAddToCart(product, size);
+                _productsFlowPanel.Controls.Add(card);
+            }
+        }
+
+        private void QuickAddToCart(Product product, ProductSize size)
+        {
+            if (_controller is null)
+            {
+                ShowCartStatus("Pick a customer on the left first.");
+                return;
+            }
+
+            try
+            {
+                _controller.AddItemToCart(product, size, 1, Enumerable.Empty<ProductModifier>());
+                RefreshCartLines();
+                RefreshSummary();
+            }
+            catch (Exception ex)
+            {
+                ShowCartStatus(ex.Message);
+            }
+        }
+
+        private void OpenCustomizerForNewItem(Product product)
+        {
+            if (_controller is null)
+            {
+                ShowCartStatus("Pick a customer on the left first.");
+                return;
+            }
+
+            using var form = new FrmItemCustomizer(product, _controller.GetModifiers());
+
+            if (form.ShowDialog(FindForm()) == DialogResult.OK)
+            {
+                try
+                {
+                    _controller.AddItemToCart(product, form.SelectedSize, form.Quantity, form.SelectedModifiers);
+                    RefreshCartLines();
+                    RefreshSummary();
+                }
+                catch (Exception ex)
+                {
+                    ShowCartStatus(ex.Message);
+                }
+            }
+        }
+
+        private void OpenCustomizerForEdit(OrderItem item)
+        {
+            if (_controller is null || item.Product is null) return;
+
+            using var form = new FrmItemCustomizer(item.Product, _controller.GetModifiers(), item);
+
+            if (form.ShowDialog(FindForm()) == DialogResult.OK)
+            {
+                try
+                {
+                    _controller.UpdateCartItem(item, form.SelectedSize, form.Quantity, form.SelectedModifiers);
+                    RefreshCartLines();
+                    RefreshSummary();
+                }
+                catch (Exception ex)
+                {
+                    ShowCartStatus(ex.Message);
+                }
+            }
+        }
+
+        private void RefreshCartLines()
+        {
+            _cartLinesPanel.Controls.Clear();
+
+            if (_controller is null || _controller.CartItems.Count == 0)
+            {
+                _cartLinesPanel.Controls.Add(_cartEmptyLabel);
+                return;
+            }
+
+            var lineWidth = Math.Max(200,
+                _cartLinesPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 8);
+
+            foreach (var item in _controller.CartItems)
+            {
+                var line = new CartLineControl(item) { Width = lineWidth };
+                line.QuantityIncreased += (s, e) => ChangeQuantity(item, +1);
+                line.QuantityDecreased += (s, e) => ChangeQuantity(item, -1);
+                line.RemoveClicked += (s, e) => RemoveFromCart(item);
+                _cartLinesPanel.Controls.Add(line);
+            }
+        }
+
+        private void RemoveFromCart(OrderItem item)
+        {
+            if (_controller is null) return;
+
+            _controller.RemoveItem(item);
+            RefreshCartLines();
+            RefreshSummary();
+        }
+
+        /// <summary>
+        /// The Order box's inline "-"/"+" stepper. TransactionController has no dedicated
+        /// "just change the quantity" method — UpdateCartItem needs the real ProductSize and
+        /// ProductModifier domain objects, not just the OrderItem's snapshotted values, so
+        /// they're looked back up from the catalog here. Dropping to 0 removes the line.
+        /// </summary>
+        private void ChangeQuantity(OrderItem item, int delta)
+        {
+            if (_controller is null || item.Product is null) return;
+
+            var newQuantity = item.Quantity + delta;
+            if (newQuantity <= 0)
+            {
+                RemoveFromCart(item);
+                return;
+            }
+
+            var size = item.Product.ProductSizes.First(s => s.ProductSizeId == item.ProductSizeId);
+            var modifiers = _controller.GetModifiers()
+                .Where(m => item.OrderItemModifiers.Any(om => om.ProductModifierId == m.ProductModifierId));
+
+            try
+            {
+                _controller.UpdateCartItem(item, size, newQuantity, modifiers);
+                RefreshCartLines();
+                RefreshSummary();
+            }
+            catch (Exception ex)
+            {
+                ShowCartStatus(ex.Message);
+            }
+        }
+
+        private void ShowCartStatus(string message) => _cartStatusLabel.Text = message;
+
+        private void CompleteSale()
+        {
+            if (_controller is null) return;
+
+            try
+            {
+                var customerName = _controller.Customer.FullName;
+                var order = _controller.CompleteSale();
+
+                MessageBox.Show(FindForm(),
+                    $"Sale completed. {order.PointsEarned} points awarded to {customerName}.",
+                    "Sale Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                // Ready for the next customer — a fresh Controller/Order is created the next
+                // time someone is found via the search box.
+                _controller = null;
+                _customerProfilePanel.Visible = false;
+                _customerSearchErrorLabel.Text = string.Empty;
+                _customerSearchTxtBx.Text = string.Empty;
+                RefreshProductsPanel();
+                RefreshCartLines();
+                RefreshSummary();
+            }
+            catch (Exception ex)
+            {
+                ShowCartStatus(ex.Message);
+            }
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Program.cs =====
+using CRM_Morcaffein.winforms.Views;
+
+namespace CRM_Morcaffein
+{
+    internal static class Program
+    {
+        /// <summary>
+        ///  The main entry point for the application.
+        /// </summary>
+        [STAThread]
+        static void Main()
+        {
+            // To customize application configuration such as set high DPI settings or default font,
+            // see https://aka.ms/applicationconfiguration.
+            ApplicationConfiguration.Initialize();
+            // Login isn't wired up yet — jumping straight to the staff console shell
+            // while the Customers/Transactions/Feedback tabs are being built out.
+            Application.Run(new FrmMain());
+        }
+    }
+}
+

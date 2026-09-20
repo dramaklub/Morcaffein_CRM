@@ -1,0 +1,114 @@
+MORCAFFEIN CRM — CODE BUNDLE (DELTA)
+Only files touched since the previous bundle are listed here. Everything else is
+unchanged from the previous ai-context-bundle.txt.
+
+The full current source is in the repo. This delta exists so a reader can catch up on
+what moved this session without re-reading ~15k lines of unchanged files.
+
+Files changed this session, with a one-line summary of each:
+  - CRM_Morcaffein.domain/entities/Order.cs (added RemovePromo; RecalculateTotals now
+    re-evaluates discounts from the live Campaign)
+  - CRM_Morcaffein.domain/entities/CampaignRedeem.cs (added AttachCampaign)
+  - CRM_Morcaffein/Services/IOrderService.cs (added RemovePromo)
+  - CRM_Morcaffein/Services/Mock/MockOrderService.cs (added RemovePromo)
+  - CRM_Morcaffein/ViewModels/TransactionViewModel.cs (added ICampaignService dep, added
+    RemovePromo + ClearPromos, reworked as clean single-constructor file)
+  - CRM_Morcaffein/ViewModels/FeedbackDetailViewModel.cs (trimmed to read-only holder)
+  - CRM_Morcaffein/Views/Controls/TransactionView.cs (full rework: left column 260px,
+    button-only promo control, corrected header alignment, disk-visible cart line fixes)
+  - CRM_Morcaffein/Views/Controls/CartLineControl.cs (Margin = Padding(0) on stepper
+    children; ✕ is a Label)
+  - CRM_Morcaffein/Views/Controls/FeedbackManagementView.cs (decision wiring removed,
+    ICampaignService dropped from ctor)
+  - CRM_Morcaffein/Views/Controls/FeedbackManagementView.Designer.cs (decisionPanel and
+    its controls removed)
+
+Full contents of each file follow.
+
+===== FILE: CRM_Morcaffein.domain/entities/CampaignRedeem.cs =====
+[unchanged in structure — add this method after the constructor:]
+
+    /// <summary>
+    /// Non-persisted back-reference to the campaign this redemption was created for. EF Core
+    /// populates Campaign automatically when loading from the database; this ensures the
+    /// reference is also set at apply time (mock path), so RecalculateTotals can re-evaluate
+    /// the discount against the current SubTotal instead of using a frozen snapshot.
+    /// </summary>
+    public void AttachCampaign(Campaign campaign)
+    {
+        Campaign = campaign ?? throw new ArgumentNullException(nameof(campaign));
+    }
+
+===== FILE: CRM_Morcaffein.domain/entities/Order.cs =====
+[only ApplyPromo and RecalculateTotals changed; the rest of the file is unchanged.
+ Replace those two methods with:]
+
+    public void ApplyPromo(Campaign campaign)
+    {
+        EnsureOrderIsPending();
+        if (campaign is null) throw new ArgumentNullException(nameof(campaign));
+
+        decimal discount = campaign.CalculateDiscount(SubTotal);
+        var redeem = new CampaignRedeem(campaign.CampaignId, OrderId, discount);
+        redeem.AttachCampaign(campaign);   // so RecalculateTotals can re-evaluate later
+        CampaignRedeems.Add(redeem);
+        RecalculateTotals();
+    }
+
+    public void RemovePromo(Campaign campaign)
+    {
+        if (campaign == null) throw new ArgumentNullException(nameof(campaign));
+
+        EnsureOrderIsPending();
+
+        var redeem = CampaignRedeems.FirstOrDefault(r => r.CampaignId == campaign.CampaignId);
+        if (redeem is null)
+            return;
+
+        CampaignRedeems.Remove(redeem);
+        RecalculateTotals();
+    }
+
+    public void RecalculateTotals()
+    {
+        SubTotal = OrderItems.Sum(item => item.SubTotal);
+
+        // Re-evaluate each applied campaign against the CURRENT SubTotal rather than using
+        // the snapshot taken at apply time — otherwise a percentage promo applied to a ₱100
+        // cart stays frozen at its ₱10 discount even after the cart grows to ₱200.
+        // CampaignRedeem carries the Campaign reference for exactly this reason (EF populates
+        // it on load; ApplyPromo attaches it at creation).
+        TotalDiscount = CampaignRedeems.Sum(redeem =>
+        {
+            if (redeem.Campaign is null)
+                return redeem.DiscountUsed;   // fall back to snapshot if nav isn't loaded
+
+            var freshDiscount = redeem.Campaign.CalculateDiscount(SubTotal);
+            redeem.UpdateDiscountUsed(freshDiscount);
+            return freshDiscount;
+        });
+
+        TotalAmount = Math.Max(0m, SubTotal - TotalDiscount);
+    }
+
+===== FILE: CRM_Morcaffein/Services/IOrderService.cs =====
+[add this method to the interface, after ApplyPromo:]
+
+    /// <summary>Wraps order.RemovePromo(campaign) — the counterpart to ApplyPromo.</summary>
+    Order RemovePromo(Order order, Campaign campaign);
+
+===== FILE: CRM_Morcaffein/Services/Mock/MockOrderService.cs =====
+[add this method after ApplyPromo:]
+
+    public Order RemovePromo(Order order, Campaign campaign)
+    {
+        order.RemovePromo(campaign); // domain method recalculates totals itself
+        return order;
+    }
+
+[NOTE: The full current source of TransactionViewModel.cs, TransactionView.cs,
+CartLineControl.cs, FeedbackDetailViewModel.cs, FeedbackManagementView.cs, and
+FeedbackManagementView.Designer.cs should be pasted in here from the repo. They are
+too large to inline in this delta header and are exactly the files whose full contents
+belong in the next full-bundle regeneration. Until then, the repo is the source of
+truth — this delta exists so a reader knows WHICH files moved.]

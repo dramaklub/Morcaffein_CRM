@@ -1,0 +1,4216 @@
+﻿===== FILE: CRM_Morcaffein.api/DTOs/DashboardResponseDtos.cs =====
+namespace CRM_Morcaffein.api.DTOs;
+
+// ---- Chart 5: Loyalty Tier Progression ----
+
+public class LoyaltyTierProgressionDto
+{
+    public List<LoyaltyTierMonthPoint> Months { get; set; } = new();
+}
+
+public class LoyaltyTierMonthPoint
+{
+    /// <summary>"2026-06" style label, oldest first.</summary>
+    public string MonthLabel { get; set; } = string.Empty;
+    public int RegularCount { get; set; }
+    public int SilverCount { get; set; }
+    public int GoldCount { get; set; }
+}
+
+// ---- Chart 4: Peak Hours Transaction Velocity ----
+
+public class PeakHoursDto
+{
+    public List<PeakHoursCell> Cells { get; set; } = new();
+}
+
+public class PeakHoursCell
+{
+    /// <summary>0 (Sunday) - 6 (Saturday), matches System.DayOfWeek.</summary>
+    public int DayOfWeek { get; set; }
+    /// <summary>0-23, 24-hour clock.</summary>
+    public int Hour { get; set; }
+    public int TransactionCount { get; set; }
+    public decimal Revenue { get; set; }
+}
+
+// ---- Chart 1: Age Demographics vs. Spending Power ----
+
+public class AgeDemographicsAovDto
+{
+    public List<AgeBracketPoint> Brackets { get; set; } = new();
+}
+
+public class AgeBracketPoint
+{
+    /// <summary>"<18", "18-24", "25-34", "35+", "Unknown"</summary>
+    public string BracketLabel { get; set; } = string.Empty;
+    public int ActiveMemberCount { get; set; }
+    public decimal PercentageOfTotal { get; set; }
+    public decimal AverageOrderValue { get; set; }
+}
+
+// ---- Chart 2: Active Campaign Sales Lift & Redemptions ----
+
+public class ActiveCampaignLiftDto
+{
+    public List<DailyCampaignLiftPoint> DailyPoints { get; set; } = new();
+}
+
+public class DailyCampaignLiftPoint
+{
+    public DateTime Date { get; set; }
+    public string DateLabel { get; set; } = string.Empty;
+    public decimal DailyRevenue { get; set; }
+    public int DailyRedemptions { get; set; }
+}
+
+// ---- Chart 3: Customer Satisfaction & Rating Distribution ----
+
+public class FeedbackRatingDistributionDto
+{
+    public double AverageRating { get; set; }
+    public int TotalFeedbacks { get; set; }
+    public List<RatingDistributionPoint> RatingBreakdown { get; set; } = new();
+}
+
+public class RatingDistributionPoint
+{
+    /// <summary>1 to 5 Stars</summary>
+    public int Rating { get; set; }
+    public int Count { get; set; }
+    public decimal Percentage { get; set; }
+}
+
+// ---- Chart 6: Shift / Barista Sales Performance (Manager-Only) ----
+
+public class BaristaSalesPerformanceDto
+{
+    public List<BaristaPerformancePoint> Baristas { get; set; } = new();
+}
+
+public class BaristaPerformancePoint
+{
+    public int EmployeeId { get; set; }
+    public string BaristaName { get; set; } = string.Empty;
+    public int OrdersProcessed { get; set; }
+    public decimal TotalRevenue { get; set; }
+    public decimal AverageOrderValue { get; set; }
+}
+
+// ---- Chart 7: Cash Register & POS Diagnostics (Manager-Only) ----
+
+public class PosDiagnosticsDto
+{
+    public decimal GrossSales { get; set; }
+    public decimal TotalCampaignDiscounts { get; set; }
+    public decimal TotalPwdSeniorDiscounts { get; set; }
+    public decimal NetSales { get; set; }
+    public int TotalTransactions { get; set; }
+    public int PwdSeniorTransactionCount { get; set; }
+    public int CampaignTransactionCount { get; set; }
+}
+
+// ---- Chart 8: Campaign ROI & Profit Margin Erosion (Admin-Only) ----
+
+public class CampaignRoiDto
+{
+    public List<CampaignRoiItem> Campaigns { get; set; } = new();
+}
+
+public class CampaignRoiItem
+{
+    public int CampaignId { get; set; }
+    public string PromoName { get; set; } = string.Empty;
+    public int TotalRedemptions { get; set; }
+    public decimal TotalDiscountCost { get; set; }
+    public decimal RevenueGenerated { get; set; }
+    public decimal NetProfitImpact { get; set; }
+}
+
+// ---- Chart 9: Customer Lifetime Value & Churn Risk (Admin-Only) ----
+
+public class CustomerLtvChurnDto
+{
+    public decimal OverallAverageLtv { get; set; }
+    public decimal RegularTierAvgLtv { get; set; }
+    public decimal SilverTierAvgLtv { get; set; }
+    public decimal GoldTierAvgLtv { get; set; }
+    public int AtRiskHighTierCount { get; set; } // >14 days inactive Silver/Gold members
+}
+
+// ---- Chart 10: Staff Overrides & Audit Logs (Admin-Only) ----
+
+public class AuditLogSummaryDto
+{
+    public int TotalManualPointAdjustments { get; set; }
+    public int ApprovedPointAdjustments { get; set; }
+    public int RejectedPointAdjustments { get; set; }
+    public int FeedbackBonusPointsAwarded { get; set; }
+    public int PendingCampaignApprovals { get; set; }
+}
+
+// ---- Recent Orders (Sales per Order KPI Modal) ----
+
+public class RecentOrderSummaryDto
+{
+    public int OrderId { get; set; }
+    public DateTime OrderDate { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public int ItemCount { get; set; }
+    public decimal TotalAmount { get; set; }
+}
+
+
+===== FILE: CRM_Morcaffein.api/Controllers/DashboardController.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.infrastructure.services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace CRM_Morcaffein.api.Controllers
+{
+    /// <summary>
+    /// Dashboard analytics endpoints. Every endpoint here pre-aggregates on the
+    /// server — the client never sees raw rows, only chart-ready shapes.
+    /// </summary>
+    [ApiController]
+    [Authorize]
+    [Route("api/tenant/{companyId:int}/dashboard")]
+    public class DashboardController : ControllerBase
+    {
+        private readonly ITenantDbContextFactory _tenantFactory;
+
+        private const int GoldThreshold = 500;
+        private const int SilverThreshold = 200;
+
+        public DashboardController(ITenantDbContextFactory tenantFactory)
+        {
+            _tenantFactory = tenantFactory;
+        }
+
+        // GET api/tenant/{companyId}/dashboard/loyalty-tier-progression?months=6
+        [HttpGet("loyalty-tier-progression")]
+        public async Task<ActionResult<LoyaltyTierProgressionDto>> GetLoyaltyTierProgression(
+            int companyId,
+            [FromQuery] int months = 6)
+        {
+            if (months < 1) months = 1;
+            if (months > 24) months = 24;
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var now = DateTime.UtcNow;
+            var result = new LoyaltyTierProgressionDto();
+
+            for (var i = months - 1; i >= 0; i--)
+            {
+                var monthEnd = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+                    .AddMonths(-i + 1).AddTicks(-1);
+                var monthStart = new DateTime(monthEnd.Year, monthEnd.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+                var eligibleCustomerIds = await tenant.Customers
+                    .AsNoTracking()
+                    .Where(c => c.CreatedAt <= monthEnd)
+                    .Select(c => c.CustomerId)
+                    .ToListAsync();
+
+                var runningTotals = await tenant.PointLedgers
+                    .AsNoTracking()
+                    .Where(pl => pl.Timestamp <= monthEnd)
+                    .GroupBy(pl => pl.CustomerId)
+                    .Select(g => new { CustomerId = g.Key, Total = g.Sum(x => x.PointsChange) })
+                    .ToDictionaryAsync(x => x.CustomerId, x => x.Total);
+
+                int regular = 0, silver = 0, gold = 0;
+                foreach (var customerId in eligibleCustomerIds)
+                {
+                    var total = runningTotals.TryGetValue(customerId, out var t) ? t : 0;
+                    if (total >= GoldThreshold) gold++;
+                    else if (total >= SilverThreshold) silver++;
+                    else regular++;
+                }
+
+                result.Months.Add(new LoyaltyTierMonthPoint
+                {
+                    MonthLabel = monthStart.ToString("yyyy-MM"),
+                    RegularCount = regular,
+                    SilverCount = silver,
+                    GoldCount = gold,
+                });
+            }
+
+            return Ok(result);
+        }
+
+        // GET api/tenant/{companyId}/dashboard/peak-hours
+        // Static transaction velocity map (by design unaffected by range selector)
+        [HttpGet("peak-hours")]
+        public async Task<ActionResult<PeakHoursDto>> GetPeakHours(int companyId)
+        {
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var orders = await tenant.Orders
+                .AsNoTracking()
+                .Where(o => o.Status == "Completed")
+                .Select(o => new { o.OrderDate, o.TotalAmount })
+                .ToListAsync();
+
+            var cells = orders
+                .GroupBy(o => new { Day = (int)o.OrderDate.DayOfWeek, o.OrderDate.Hour })
+                .Select(g => new PeakHoursCell
+                {
+                    DayOfWeek = g.Key.Day,
+                    Hour = g.Key.Hour,
+                    TransactionCount = g.Count(),
+                    Revenue = g.Sum(x => x.TotalAmount),
+                })
+                .ToList();
+
+            return Ok(new PeakHoursDto { Cells = cells });
+        }
+
+        // ---- Chart 1: Age Demographics vs. Spending Power (Shared) ----
+
+        [HttpGet("age-demographics")]
+        public async Task<ActionResult<AgeDemographicsAovDto>> GetAgeDemographics(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var customers = await tenant.Customers
+                .AsNoTracking()
+                .Where(c => c.IsActive)
+                .Select(c => new
+                {
+                    c.CustomerId,
+                    c.Birthday,
+                    TotalSpend = c.Orders.Where(o => o.Status == "Completed" && o.OrderDate >= startDate).Sum(o => (decimal?)o.TotalAmount) ?? 0m,
+                    OrderCount = c.Orders.Count(o => o.Status == "Completed" && o.OrderDate >= startDate)
+                })
+                .ToListAsync();
+
+            var totalMembers = customers.Count;
+            var today = DateTime.UtcNow;
+
+            string GetBracket(DateTime? bday)
+            {
+                if (!bday.HasValue) return "Unknown";
+                var age = today.Year - bday.Value.Year;
+                if (bday.Value.Date > today.AddYears(-age)) age--;
+
+                if (age < 18) return "<18";
+                if (age <= 24) return "18-24";
+                if (age <= 34) return "25-34";
+                return "35+";
+            }
+
+            var bracketsOrder = new[] { "<18", "18-24", "25-34", "35+", "Unknown" };
+
+            var grouped = customers
+                .GroupBy(c => GetBracket(c.Birthday))
+                .ToDictionary(g => g.Key, g => new
+                {
+                    Count = g.Count(),
+                    TotalSpend = g.Sum(x => x.TotalSpend),
+                    TotalOrders = g.Sum(x => x.OrderCount)
+                });
+
+            var result = new AgeDemographicsAovDto();
+
+            foreach (var b in bracketsOrder)
+            {
+                if (grouped.TryGetValue(b, out var data))
+                {
+                    var aov = data.TotalOrders > 0 ? data.TotalSpend / data.TotalOrders : 0m;
+                    var pct = totalMembers > 0 ? (decimal)data.Count / totalMembers * 100m : 0m;
+
+                    result.Brackets.Add(new AgeBracketPoint
+                    {
+                        BracketLabel = b,
+                        ActiveMemberCount = data.Count,
+                        PercentageOfTotal = decimal.Round(pct, 1),
+                        AverageOrderValue = decimal.Round(aov, 2)
+                    });
+                }
+                else
+                {
+                    result.Brackets.Add(new AgeBracketPoint
+                    {
+                        BracketLabel = b,
+                        ActiveMemberCount = 0,
+                        PercentageOfTotal = 0m,
+                        AverageOrderValue = 0m
+                    });
+                }
+            }
+
+            return Ok(result);
+        }
+
+        // ---- Chart 2: Active Campaign Sales Lift & Redemptions (Shared) ----
+
+        [HttpGet("campaign-lift")]
+        public async Task<ActionResult<ActiveCampaignLiftDto>> GetCampaignLift(
+            int companyId,
+            [FromQuery] int days = 14)
+        {
+            if (days < 1) days = 1;
+            if (days > 90) days = 90;
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            var orders = await tenant.Orders
+                .AsNoTracking()
+                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+                .Select(o => new { Date = o.OrderDate.Date, o.TotalAmount })
+                .ToListAsync();
+
+            var redemptions = await tenant.CampaignRedeems
+                .AsNoTracking()
+                .Where(cr => cr.RedeemDate >= startDate)
+                .Select(cr => cr.RedeemDate.Date)
+                .ToListAsync();
+
+            var orderGroup = orders.GroupBy(o => o.Date).ToDictionary(g => g.Key, g => g.Sum(x => x.TotalAmount));
+            var redemptionGroup = redemptions.GroupBy(d => d).ToDictionary(g => g.Key, g => g.Count());
+
+            var result = new ActiveCampaignLiftDto();
+
+            for (var d = startDate; d <= DateTime.UtcNow.Date; d = d.AddDays(1))
+            {
+                var rev = orderGroup.TryGetValue(d, out var r) ? r : 0m;
+                var red = redemptionGroup.TryGetValue(d, out var c) ? c : 0;
+
+                result.DailyPoints.Add(new DailyCampaignLiftPoint
+                {
+                    Date = d,
+                    DateLabel = d.ToString("MMM d"),
+                    DailyRevenue = rev,
+                    DailyRedemptions = red
+                });
+            }
+
+            return Ok(result);
+        }
+
+        // ---- Chart 3: Customer Satisfaction & Rating Distribution (Shared) ----
+
+        [HttpGet("feedback-ratings")]
+        public async Task<ActionResult<FeedbackRatingDistributionDto>> GetFeedbackRatings(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var feedbacks = await tenant.Feedbacks
+                .AsNoTracking()
+                .Where(f => f.IsActive && f.DateLogged >= startDate)
+                .Select(f => f.Rating)
+                .ToListAsync();
+
+            var total = feedbacks.Count;
+            var avg = total > 0 ? feedbacks.Average() : 0.0;
+
+            var result = new FeedbackRatingDistributionDto
+            {
+                AverageRating = Math.Round(avg, 1),
+                TotalFeedbacks = total
+            };
+
+            for (int rating = 1; rating <= 5; rating++)
+            {
+                var count = feedbacks.Count(r => r == rating);
+                var pct = total > 0 ? (decimal)count / total * 100m : 0m;
+
+                result.RatingBreakdown.Add(new RatingDistributionPoint
+                {
+                    Rating = rating,
+                    Count = count,
+                    Percentage = decimal.Round(pct, 1)
+                });
+            }
+
+            return Ok(result);
+        }
+
+        // ---- Chart 6: Shift / Barista Sales Performance (Manager Only) ----
+
+        [HttpGet("barista-sales")]
+        public async Task<ActionResult<BaristaSalesPerformanceDto>> GetBaristaSales(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (!CallerIsManagerOrAdmin())
+                return StatusCode(403, new { message = "Only managers and admins can view barista performance." });
+
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var sales = await tenant.Orders
+                .AsNoTracking()
+                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+                .GroupBy(o => o.CreatedBy)
+                .Select(g => new
+                {
+                    EmployeeId = g.Key,
+                    OrdersProcessed = g.Count(),
+                    TotalRevenue = g.Sum(x => x.TotalAmount)
+                })
+                .ToListAsync();
+
+            var employeeIds = sales.Select(s => s.EmployeeId).ToList();
+
+            var employees = await tenant.Employees
+                .AsNoTracking()
+                .Where(e => employeeIds.Contains(e.EmployeeId))
+                .ToDictionaryAsync(e => e.EmployeeId, e => (e.FirstName + " " + e.LastName).Trim());
+
+            var result = new BaristaSalesPerformanceDto();
+
+            foreach (var item in sales.OrderByDescending(s => s.TotalRevenue))
+            {
+                var name = employees.TryGetValue(item.EmployeeId, out var empName) ? empName : $"Staff #{item.EmployeeId}";
+                var aov = item.OrdersProcessed > 0 ? item.TotalRevenue / item.OrdersProcessed : 0m;
+
+                result.Baristas.Add(new BaristaPerformancePoint
+                {
+                    EmployeeId = item.EmployeeId,
+                    BaristaName = name,
+                    OrdersProcessed = item.OrdersProcessed,
+                    TotalRevenue = item.TotalRevenue,
+                    AverageOrderValue = decimal.Round(aov, 2)
+                });
+            }
+
+            return Ok(result);
+        }
+
+        // ---- Chart 7: Cash Register & POS Diagnostics (Manager Only) ----
+
+        [HttpGet("pos-diagnostics")]
+        public async Task<ActionResult<PosDiagnosticsDto>> GetPosDiagnostics(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (!CallerIsManagerOrAdmin())
+                return StatusCode(403, new { message = "Only managers and admins can view POS diagnostics." });
+
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var completedOrders = await tenant.Orders
+                .AsNoTracking()
+                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+                .ToListAsync();
+
+            var gross = completedOrders.Sum(o => o.SubTotal);
+            var campaignDiscounts = completedOrders.Sum(o => o.TotalDiscount);
+            var pwdDiscounts = completedOrders.Sum(o => o.PwdSeniorDiscountAmount);
+            var net = completedOrders.Sum(o => o.TotalAmount);
+
+            var totalCount = completedOrders.Count;
+            var pwdCount = completedOrders.Count(o => o.HasPwdSeniorDiscount);
+            var campaignCount = completedOrders.Count(o => o.TotalDiscount > 0);
+
+            return Ok(new PosDiagnosticsDto
+            {
+                GrossSales = gross,
+                TotalCampaignDiscounts = campaignDiscounts,
+                TotalPwdSeniorDiscounts = pwdDiscounts,
+                NetSales = net,
+                TotalTransactions = totalCount,
+                PwdSeniorTransactionCount = pwdCount,
+                CampaignTransactionCount = campaignCount
+            });
+        }
+
+        // ---- Chart 8: Campaign ROI & Profit Margin Erosion (Admin Only) ----
+
+        [HttpGet("campaign-roi")]
+        public async Task<ActionResult<CampaignRoiDto>> GetCampaignRoi(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (!CallerIsManagerOrAdmin())
+                return StatusCode(403, new { message = "Only managers and admins can view campaign ROI reports." });
+
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var campaigns = await tenant.Campaigns
+                .AsNoTracking()
+                .Include(c => c.CampaignRedeems.Where(cr => cr.RedeemDate >= startDate))
+                    .ThenInclude(cr => cr.Order)
+                .OrderByDescending(c => c.CampaignId)
+                .ToListAsync();
+
+            var result = new CampaignRoiDto();
+
+            foreach (var c in campaigns)
+            {
+                var redemptions = c.CampaignRedeems.Count;
+                var discountCost = c.CampaignRedeems.Sum(cr => cr.DiscountUsed);
+                var revenue = c.CampaignRedeems
+                    .Where(cr => cr.Order != null && cr.Order.Status == "Completed")
+                    .Sum(cr => cr.Order!.TotalAmount);
+
+                result.Campaigns.Add(new CampaignRoiItem
+                {
+                    CampaignId = c.CampaignId,
+                    PromoName = c.PromoName,
+                    TotalRedemptions = redemptions,
+                    TotalDiscountCost = discountCost,
+                    RevenueGenerated = revenue,
+                    NetProfitImpact = revenue - discountCost
+                });
+            }
+
+            return Ok(result);
+        }
+
+        // ---- Chart 9: Customer Lifetime Value & Churn Risk (Admin Only) ----
+
+        [HttpGet("customer-ltv-churn")]
+        public async Task<ActionResult<CustomerLtvChurnDto>> GetCustomerLtvChurn(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (!CallerIsAdmin())
+                return StatusCode(403, new { message = "Only admins can view customer LTV reports." });
+
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var customers = await tenant.Customers
+                .AsNoTracking()
+                .Where(c => c.IsActive)
+                .Select(c => new
+                {
+                    c.CustomerId,
+                    c.PointsBalance,
+                    c.LastVisitDate,
+                    TotalSpend = c.Orders.Where(o => o.Status == "Completed" && o.OrderDate >= startDate).Sum(o => (decimal?)o.TotalAmount) ?? 0m
+                })
+                .ToListAsync();
+
+            var now = DateTime.UtcNow;
+            var thresholdDays = 14;
+
+            var overallAvg = customers.Count > 0 ? customers.Average(c => c.TotalSpend) : 0m;
+
+            var regular = customers.Where(c => c.PointsBalance < 200).ToList();
+            var silver = customers.Where(c => c.PointsBalance >= 200 && c.PointsBalance < 500).ToList();
+            var gold = customers.Where(c => c.PointsBalance >= 500).ToList();
+
+            var regAvg = regular.Count > 0 ? regular.Average(c => c.TotalSpend) : 0m;
+            var silAvg = silver.Count > 0 ? silver.Average(c => c.TotalSpend) : 0m;
+            var goldAvg = gold.Count > 0 ? gold.Average(c => c.TotalSpend) : 0m;
+
+            var atRiskCount = customers.Count(c =>
+                c.PointsBalance >= 200 && (now - c.LastVisitDate).TotalDays > thresholdDays);
+
+            return Ok(new CustomerLtvChurnDto
+            {
+                OverallAverageLtv = decimal.Round(overallAvg, 2),
+                RegularTierAvgLtv = decimal.Round(regAvg, 2),
+                SilverTierAvgLtv = decimal.Round(silAvg, 2),
+                GoldTierAvgLtv = decimal.Round(goldAvg, 2),
+                AtRiskHighTierCount = atRiskCount
+            });
+        }
+
+        // ---- Chart 10: Staff Overrides & Audit Logs (Admin Only) ----
+
+        [HttpGet("audit-summary")]
+        public async Task<ActionResult<AuditLogSummaryDto>> GetAuditSummary(
+            int companyId,
+            [FromQuery] int days = 30)
+        {
+            if (!CallerIsAdmin())
+                return StatusCode(403, new { message = "Only admins can view audit summary reports." });
+
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var adjustments = await tenant.PointAdjustmentRequests
+                .AsNoTracking()
+                .Where(a => a.RequestedAt >= startDate)
+                .ToListAsync();
+
+            var totalAdjustments = adjustments.Count;
+            var approvedAdjustments = adjustments.Count(a => a.Status == "Approved");
+            var rejectedAdjustments = adjustments.Count(a => a.Status == "Rejected");
+
+            var feedbackBonusCount = await tenant.PointLedgers
+                .AsNoTracking()
+                .Where(pl => pl.Type == "FeedbackBonus" && pl.Timestamp >= startDate)
+                .CountAsync();
+
+            var pendingCampaigns = await tenant.Campaigns
+                .AsNoTracking()
+                .Where(c => c.Status == "Pending")
+                .CountAsync();
+
+            return Ok(new AuditLogSummaryDto
+            {
+                TotalManualPointAdjustments = totalAdjustments,
+                ApprovedPointAdjustments = approvedAdjustments,
+                RejectedPointAdjustments = rejectedAdjustments,
+                FeedbackBonusPointsAwarded = feedbackBonusCount,
+                PendingCampaignApprovals = pendingCampaigns
+            });
+        }
+
+        // ---- Recent Orders (Sales per Order KPI Modal) ----
+
+        [HttpGet("recent-orders")]
+        public async Task<ActionResult<List<RecentOrderSummaryDto>>> GetRecentOrders(
+            int companyId,
+            [FromQuery] int days = 30,
+            [FromQuery] int limit = 10)
+        {
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+            if (limit < 1) limit = 10;
+            if (limit > 100) limit = 100;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var orders = await tenant.Orders
+                .AsNoTracking()
+                .Include(o => o.Customer)
+                .Include(o => o.OrderItems)
+                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+                .OrderByDescending(o => o.OrderDate)
+                .Take(limit)
+                .Select(o => new RecentOrderSummaryDto
+                {
+                    OrderId = o.OrderId,
+                    OrderDate = o.OrderDate,
+                    CustomerName = o.Customer != null ? (o.Customer.FirstName + " " + o.Customer.LastName).Trim() : "Walk-in Customer",
+                    ItemCount = o.OrderItems.Sum(i => i.Quantity),
+                    TotalAmount = o.TotalAmount
+                })
+                .ToListAsync();
+
+            return Ok(orders);
+        }
+
+        // ---- Helpers ----
+
+        private bool CallerIsManagerOrAdmin() =>
+            User.IsInRole("Manager") || User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+
+        private bool CallerIsAdmin() =>
+            User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Services/Api/DashboardApi.cs =====
+using System.Net.Http.Json;
+using CRM_Morcaffein.api.DTOs;
+
+namespace CRM_Morcaffein.winforms.Services.Api
+{
+    public class DashboardApi
+    {
+        private readonly HttpClient _http;
+
+        public DashboardApi()
+        {
+            _http = ApiClientFactory.Create();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/loyalty-tier-progression
+        public async Task<LoyaltyTierProgressionDto> GetLoyaltyTierProgressionAsync(int months = 6)
+        {
+            var response = await _http.GetAsync(
+                $"api/tenant/{ApiConfig.CompanyId}/dashboard/loyalty-tier-progression?months={months}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<LoyaltyTierProgressionDto>();
+            return result ?? new LoyaltyTierProgressionDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/peak-hours (static, not affected by range filter)
+        public async Task<PeakHoursDto> GetPeakHoursAsync()
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/peak-hours");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<PeakHoursDto>();
+            return result ?? new PeakHoursDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/age-demographics
+        public async Task<AgeDemographicsAovDto> GetAgeDemographicsAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/age-demographics?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<AgeDemographicsAovDto>();
+            return result ?? new AgeDemographicsAovDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/campaign-lift
+        public async Task<ActiveCampaignLiftDto> GetCampaignLiftAsync(int days = 14)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/campaign-lift?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<ActiveCampaignLiftDto>();
+            return result ?? new ActiveCampaignLiftDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/feedback-ratings
+        public async Task<FeedbackRatingDistributionDto> GetFeedbackRatingsAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/feedback-ratings?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<FeedbackRatingDistributionDto>();
+            return result ?? new FeedbackRatingDistributionDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/barista-sales
+        public async Task<BaristaSalesPerformanceDto> GetBaristaSalesAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/barista-sales?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<BaristaSalesPerformanceDto>();
+            return result ?? new BaristaSalesPerformanceDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/pos-diagnostics
+        public async Task<PosDiagnosticsDto> GetPosDiagnosticsAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/pos-diagnostics?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<PosDiagnosticsDto>();
+            return result ?? new PosDiagnosticsDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/campaign-roi
+        public async Task<CampaignRoiDto> GetCampaignRoiAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/campaign-roi?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<CampaignRoiDto>();
+            return result ?? new CampaignRoiDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/customer-ltv-churn
+        public async Task<CustomerLtvChurnDto> GetCustomerLtvChurnAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/customer-ltv-churn?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<CustomerLtvChurnDto>();
+            return result ?? new CustomerLtvChurnDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/audit-summary
+        public async Task<AuditLogSummaryDto> GetAuditSummaryAsync(int days = 30)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/audit-summary?days={days}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<AuditLogSummaryDto>();
+            return result ?? new AuditLogSummaryDto();
+        }
+
+        // GET api/tenant/{companyId}/dashboard/recent-orders
+        public async Task<List<RecentOrderSummaryDto>> GetRecentOrdersAsync(int days = 30, int limit = 10)
+        {
+            var response = await _http.GetAsync($"api/tenant/{ApiConfig.CompanyId}/dashboard/recent-orders?days={days}&limit={limit}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<List<RecentOrderSummaryDto>>();
+            return result ?? new List<RecentOrderSummaryDto>();
+        }
+
+        private static async Task EnsureSuccess(HttpResponseMessage response)
+        {
+            if (response.IsSuccessStatusCode) return;
+            var body = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(
+                string.IsNullOrWhiteSpace(body)
+                    ? $"API returned {(int)response.StatusCode}."
+                    : body);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Controllers/DashboardController.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.winforms.Services.Api;
+
+namespace CRM_Morcaffein.Controllers
+{
+    /// <summary>
+    /// UI controller for the Dashboard tab (WinForms). Pure coordination: the View
+    /// calls these methods, they forward to the API. All aggregation logic lives on
+    /// the API side (DashboardController in CRM_Morcaffein.api).
+    /// </summary>
+    public class DashboardController
+    {
+        private readonly DashboardApi _api;
+
+        public DashboardController()
+        {
+            _api = new DashboardApi();
+        }
+
+        public Task<LoyaltyTierProgressionDto> GetLoyaltyTierProgressionAsync(int months = 6)
+            => _api.GetLoyaltyTierProgressionAsync(months);
+
+        public Task<PeakHoursDto> GetPeakHoursAsync()
+            => _api.GetPeakHoursAsync();
+
+        public Task<AgeDemographicsAovDto> GetAgeDemographicsAsync(int days = 30)
+            => _api.GetAgeDemographicsAsync(days);
+
+        public Task<ActiveCampaignLiftDto> GetCampaignLiftAsync(int days = 14)
+            => _api.GetCampaignLiftAsync(days);
+
+        public Task<FeedbackRatingDistributionDto> GetFeedbackRatingsAsync(int days = 30)
+            => _api.GetFeedbackRatingsAsync(days);
+
+        public Task<BaristaSalesPerformanceDto> GetBaristaSalesAsync(int days = 30)
+            => _api.GetBaristaSalesAsync(days);
+
+        public Task<PosDiagnosticsDto> GetPosDiagnosticsAsync(int days = 30)
+            => _api.GetPosDiagnosticsAsync(days);
+
+        public Task<CampaignRoiDto> GetCampaignRoiAsync(int days = 30)
+            => _api.GetCampaignRoiAsync(days);
+
+        public Task<CustomerLtvChurnDto> GetCustomerLtvChurnAsync(int days = 30)
+            => _api.GetCustomerLtvChurnAsync(days);
+
+        public Task<AuditLogSummaryDto> GetAuditSummaryAsync(int days = 30)
+            => _api.GetAuditSummaryAsync(days);
+
+        public Task<List<RecentOrderSummaryDto>> GetRecentOrdersAsync(int days = 30, int limit = 10)
+            => _api.GetRecentOrdersAsync(days, limit);
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Theme/BrandPalette.cs =====
+using System.Drawing;
+
+namespace CRM_Morcaffein.Theme
+{
+    /// <summary>
+    /// Every color in the UI should come from this class or be a plain white/system neutral.
+    /// The brand roasted-coffee brown (#572400) — and tints/tones/shades of it — is the only
+    /// hue used for branding, primary actions, and content-area accents (see HeaderBackground,
+    /// ButtonPrimaryFill). Large chrome surfaces (the sidebar, in particular) are explicitly
+    /// allowed to lean on plain white/light-grey neutrals instead of brand tints for a lighter
+    /// feel — see the Nav* tokens below. Status/tier indicators are plain text with no color
+    /// coding at all for now (no blues/greens/reds/yellows anywhere).
+    /// </summary>
+    public static class BrandPalette
+    {
+        public static readonly Color Brand = ColorTranslator.FromHtml("#572400");
+
+        // --- Shades (brand mixed toward black) : darker, for pressed states / headers ---
+        public static readonly Color Shade10 = Shade(Brand, 0.10);
+        public static readonly Color Shade25 = Shade(Brand, 0.25);
+        public static readonly Color Shade45 = Shade(Brand, 0.45); // pressed button state
+
+        // --- Tints (brand mixed toward white) : lighter, for surfaces / hover / disabled ---
+        public static readonly Color Tint10 = Tint(Brand, 0.10);
+        public static readonly Color Tint25 = Tint(Brand, 0.25); // hover state
+        public static readonly Color Tint50 = Tint(Brand, 0.50);
+        public static readonly Color Tint75 = Tint(Brand, 0.75); // subtle card background
+        public static readonly Color Tint85 = Tint(Brand, 0.85); // sidebar chrome — a step darker than the page background
+        public static readonly Color Tint90 = Tint(Brand, 0.90); // page background
+        public static readonly Color Tint95 = Tint(Brand, 0.95); // near-white panel background
+
+        // --- Tones (brand mixed toward mid-grey) : muted, for borders / disabled fills ---
+        public static readonly Color Tone35 = Tone(Brand, 0.35);
+        public static readonly Color Tone60 = Tone(Brand, 0.60); // disabled control fill
+        public static readonly Color Tone80 = Tone(Brand, 0.80); // divider lines
+
+        // --- Neutrals: white/black and brand-mixed greys only ---
+        public static readonly Color White = Color.White;
+        public static readonly Color Black = Color.Black;
+        public static readonly Color NeutralText = Shade(Brand, 0.55);   // body text (brand-tinted near-black)
+        public static readonly Color NeutralTextMuted = Tone(Brand, 0.45); // secondary text
+
+        // --- Semantic roles, expressed via VALUE not hue ---
+        public static Color SurfacePrimary => White;
+        public static Color SurfaceSecondary => Tint95;
+        public static Color SurfaceCard => Tint90;
+        public static Color Border => Tone80;
+
+        // Table headers: a light, brand-tinted band with dark text — not a full-brand fill.
+        // The main color stays reserved for primary actions (buttons) so it doesn't compete
+        // for attention across every grid in the app. Swapped with RowSelected below: the
+        // header now takes the stronger of the two tints, so it stands out over a selected row.
+        public static Color HeaderBackground => Tint50;
+        public static Color HeaderText => NeutralText;
+
+        // Selected row highlight — was the header's tint, now the lighter one.
+        public static Color RowSelected => Tint90;
+
+        public static Color ButtonPrimaryFill => Brand;
+        public static Color ButtonPrimaryHover => Shade10;
+        public static Color ButtonPrimaryPressed => Shade25;
+        public static Color ButtonPrimaryText => White;
+
+        public static Color ButtonSecondaryFill => Tint75;
+        public static Color ButtonSecondaryHover => Tint50;
+        public static Color ButtonSecondaryText => Shade(Brand, 0.30);
+
+        // Plain neutral grey — deliberately NOT a tint/shade of the brand color, so a
+        // disabled button reads as "off" rather than as a duller version of the same action.
+        public static Color ButtonDisabledFill => Color.FromArgb(255, 210, 205, 198);
+        public static Color ButtonDisabledText => Color.FromArgb(255, 135, 128, 120);
+
+        // "Positive" state (points earned, resolved feedback, success) -> lightest fill, dark text
+        public static Color StatusPositiveFill => Tint75;
+        public static Color StatusPositiveText => Shade25;
+
+        // "Attention" state (low stock, pending feedback, warnings) -> mid-tone, bolder text
+        public static Color StatusAttentionFill => Tint50;
+        public static Color StatusAttentionText => Shade45;
+
+        // "Negative" state (dismissed, locked account, errors) -> darkest shade, high contrast text
+        public static Color StatusNegativeFill => Shade25;
+        public static Color StatusNegativeText => White;
+
+        // --- Sidebar/nav chrome: a distinct step in tone from both the content background
+        // (Tint95) and the table/card surfaces (White), so the sidebar reads as its own
+        // region rather than blending into whatever's next to it. ---
+        public static Color NavBackground => Tint85;
+        public static Color NavFooterBackground => Tint75;
+        public static Color NavText => NeutralTextMuted;
+        public static Color NavActiveBackground => White;
+        public static Color NavActiveText => Brand;
+        public static Color NavHoverBackground => Color.White;
+
+        // Unfilled star rating — Border (Tone80) reads too faint against white; Tone35 keeps
+        // the same neutral hue family but with enough contrast to actually see the outline.
+        public static Color RatingInactive => Tone35;
+
+        // --- Top bar: thin brand strip above the content/sidebar (icon mark + tab name) ---
+        public static Color TopBarBackground => White;
+        public static Color TopBarBorder => Border;
+
+        public static Font BrandFontRegular(float size) => TryCreateFont("Bahnschrift SemiLight", size, FontStyle.Regular);
+        public static Font BrandFontBold(float size) => TryCreateFont("Bahnschrift SemiBold", size, FontStyle.Bold);
+
+        private static Font TryCreateFont(string family, float size, FontStyle style)
+        {
+            try
+            {
+                return new Font(family, size, style);
+            }
+            catch
+            {
+                // Falls back gracefully if the custom font isn't installed on a given machine.
+                return new Font(FontFamily.GenericSansSerif, size, style);
+            }
+        }
+
+        private static Color Tint(Color c, double amount) => Mix(c, Color.White, amount);
+        private static Color Shade(Color c, double amount) => Mix(c, Color.Black, amount);
+
+        // "Tone" = mix toward a neutral mid-grey derived from the brand itself, for muted/disabled elements.
+        private static Color Tone(Color c, double amount)
+        {
+            var grey = Mix(c, Color.Black, 0.5);
+            grey = Mix(grey, Color.White, 0.5);
+            return Mix(c, grey, amount);
+        }
+
+        private static Color Mix(Color a, Color b, double amount)
+        {
+            amount = Math.Clamp(amount, 0.0, 1.0);
+            int r = (int)Math.Round(a.R + (b.R - a.R) * amount);
+            int g = (int)Math.Round(a.G + (b.G - a.G) * amount);
+            int bl = (int)Math.Round(a.B + (b.B - a.B) * amount);
+            return Color.FromArgb(255, r, g, bl);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/KpiSummaryPodControl.cs =====
+using System.Drawing.Drawing2D;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Clickable KPI summary pod card for the Bento Dashboard grid.
+    /// Clean layout: Left accent bar, top-left title, right-aligned large value.
+    /// No icon, no borders.
+    /// </summary>
+    public class KpiSummaryPodControl : Panel
+    {
+        public event EventHandler? CardClicked;
+
+        private string _title = "Metric";
+        private string _value = "—";
+        private bool _isHovered;
+
+        private static readonly Font TitleFont = BrandPalette.BrandFontBold(9.5f);
+        private static readonly Font ValueFont = BrandPalette.BrandFontBold(20f);
+
+        public KpiSummaryPodControl(string title, string initialValue)
+        {
+            _title = title;
+            _value = initialValue;
+
+            Height = 90;
+            Margin = new Padding(6);
+            BackColor = BrandPalette.SurfacePrimary;
+            Cursor = Cursors.Hand;
+
+            SetStyle(ControlStyles.UserPaint
+                   | ControlStyles.AllPaintingInWmPaint
+                   | ControlStyles.OptimizedDoubleBuffer
+                   | ControlStyles.ResizeRedraw, true);
+
+            MouseEnter += (s, e) => { _isHovered = true; Invalidate(); };
+            MouseLeave += (s, e) => { _isHovered = false; Invalidate(); };
+            Click += (s, e) => CardClicked?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Backwards-compatible overloads
+        public KpiSummaryPodControl(string icon, string title, string initialValue, string ignored)
+            : this(title, initialValue) { }
+
+        public KpiSummaryPodControl(string icon, string title, string initialValue)
+            : this(title, initialValue) { }
+
+        public void UpdateData(string value)
+        {
+            _value = value;
+            Invalidate();
+        }
+
+        public void UpdateData(string value, string ignored) => UpdateData(value);
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            var rect = new Rectangle(2, 2, Width - 5, Height - 5);
+            const int radius = 10;
+
+            // Card Fill (no outer border)
+            using var path = RoundedRect(rect, radius);
+            using (var fill = new SolidBrush(_isHovered ? BrandPalette.Tint90 : BrandPalette.SurfacePrimary))
+                g.FillPath(fill, path);
+
+            // Left accent bar
+            using (var accent = new SolidBrush(BrandPalette.Brand))
+                g.FillRectangle(accent, new Rectangle(2, rect.Y + 8, 4, rect.Height - 16));
+
+            const int padL = 16;
+            const int padR = 16;
+
+            // Title: top-left
+            var titleRect = new Rectangle(padL, 12, Width - padL - padR, 20);
+            TextRenderer.DrawText(g, _title, TitleFont,
+                titleRect, BrandPalette.NeutralTextMuted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+            // Value: large, bold, RIGHT-ALIGNED
+            var valueRect = new Rectangle(padL, 34, Width - padL - padR, Height - 42);
+            TextRenderer.DrawText(g, _value, ValueFont,
+                valueRect, BrandPalette.Brand,
+                TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        private static GraphicsPath RoundedRect(Rectangle b, int r)
+        {
+            int d = r * 2;
+            var sz = new Size(d, d);
+            var arc = new Rectangle(b.Location, sz);
+            var p = new GraphicsPath();
+
+            p.AddArc(arc, 180, 90);
+            arc.X = b.Right - d; p.AddArc(arc, 270, 90);
+            arc.Y = b.Bottom - d; p.AddArc(arc, 0, 90);
+            arc.X = b.Left; p.AddArc(arc, 90, 90);
+            p.CloseFigure();
+            return p;
+        }
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/DashboardDateRangeFilterControl.cs =====
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    public enum DateRangePreset
+    {
+        Today,
+        SevenDays,
+        OneMonth,
+        Custom
+    }
+
+    public class DashboardDateRangeEventArgs : EventArgs
+    {
+        public DateRangePreset Preset { get; }
+        public DateTime StartDate { get; }
+        public DateTime EndDate { get; }
+
+        public DashboardDateRangeEventArgs(DateRangePreset preset, DateTime start, DateTime end)
+        {
+            Preset = preset;
+            StartDate = start;
+            EndDate = end;
+        }
+    }
+
+    /// <summary>
+    /// Toggleable date-range filter control with soft-neumorphic button pills.
+    /// Defaults to 1 Month.
+    /// </summary>
+    public class DashboardDateRangeFilterControl : UserControl
+    {
+        public event EventHandler<DashboardDateRangeEventArgs>? RangeChanged;
+
+        public DateRangePreset SelectedPreset { get; private set; } = DateRangePreset.OneMonth;
+        public DateTime StartDate { get; private set; }
+        public DateTime EndDate { get; private set; }
+
+        private readonly Button _btnToday;
+        private readonly Button _btn7Days;
+        private readonly Button _btn1Month;
+        private readonly Button _btnCustom;
+        private readonly DateTimePicker _dtpStart;
+        private readonly DateTimePicker _dtpEnd;
+        private readonly Panel _customPickerPanel;
+
+        public DashboardDateRangeFilterControl()
+        {
+            Height = 36;
+            AutoSize = true;
+            BackColor = Color.Transparent;
+
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                AutoSize = true,
+                BackColor = Color.Transparent,
+            };
+
+            var label = new Label
+            {
+                Text = "📅 Range:",
+                AutoSize = true,
+                Font = BrandPalette.BrandFontBold(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                Margin = new Padding(0, 8, 8, 0),
+            };
+
+            _btnToday = CreatePillButton("Today", DateRangePreset.Today);
+            _btn7Days = CreatePillButton("7 Days", DateRangePreset.SevenDays);
+            _btn1Month = CreatePillButton("1 Month", DateRangePreset.OneMonth);
+            _btnCustom = CreatePillButton("Custom", DateRangePreset.Custom);
+
+            _customPickerPanel = new Panel
+            {
+                AutoSize = true,
+                Height = 30,
+                Visible = false,
+                Margin = new Padding(6, 2, 0, 0),
+                BackColor = Color.Transparent,
+            };
+
+            _dtpStart = new DateTimePicker
+            {
+                Format = DateTimePickerFormat.Short,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                Width = 95,
+                Value = DateTime.Today.AddMonths(-1),
+            };
+            _dtpStart.ValueChanged += (s, e) => TriggerCustomRange();
+
+            var toLabel = new Label
+            {
+                Text = "to",
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                Location = new Point(100, 6),
+            };
+
+            _dtpEnd = new DateTimePicker
+            {
+                Format = DateTimePickerFormat.Short,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                Width = 95,
+                Location = new Point(120, 0),
+                Value = DateTime.Today,
+            };
+            _dtpEnd.ValueChanged += (s, e) => TriggerCustomRange();
+
+            _customPickerPanel.Controls.Add(_dtpStart);
+            _customPickerPanel.Controls.Add(toLabel);
+            _customPickerPanel.Controls.Add(_dtpEnd);
+
+            flow.Controls.Add(label);
+            flow.Controls.Add(_btnToday);
+            flow.Controls.Add(_btn7Days);
+            flow.Controls.Add(_btn1Month);
+            flow.Controls.Add(_btnCustom);
+            flow.Controls.Add(_customPickerPanel);
+
+            Controls.Add(flow);
+
+            // Default to 1 Month
+            SelectPreset(DateRangePreset.OneMonth, notify: false);
+        }
+
+        private Button CreatePillButton(string text, DateRangePreset preset)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Height = 30,
+                Width = 72,
+                FlatStyle = FlatStyle.Flat,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                Cursor = Cursors.Hand,
+                Margin = new Padding(2, 2, 2, 2),
+            };
+            btn.FlatAppearance.BorderSize = 0;
+            btn.Click += (s, e) => SelectPreset(preset, notify: true);
+            return btn;
+        }
+
+        public void SelectPreset(DateRangePreset preset, bool notify = true)
+        {
+            SelectedPreset = preset;
+
+            var today = DateTime.Today;
+
+            switch (preset)
+            {
+                case DateRangePreset.Today:
+                    StartDate = today;
+                    EndDate = today.AddDays(1).AddTicks(-1);
+                    _customPickerPanel.Visible = false;
+                    break;
+                case DateRangePreset.SevenDays:
+                    StartDate = today.AddDays(-6);
+                    EndDate = today.AddDays(1).AddTicks(-1);
+                    _customPickerPanel.Visible = false;
+                    break;
+                case DateRangePreset.OneMonth:
+                    StartDate = today.AddMonths(-1);
+                    EndDate = today.AddDays(1).AddTicks(-1);
+                    _customPickerPanel.Visible = false;
+                    break;
+                case DateRangePreset.Custom:
+                    StartDate = _dtpStart.Value.Date;
+                    EndDate = _dtpEnd.Value.Date.AddDays(1).AddTicks(-1);
+                    _customPickerPanel.Visible = true;
+                    break;
+            }
+
+            UpdateButtonStyles();
+
+            if (notify)
+            {
+                RangeChanged?.Invoke(this, new DashboardDateRangeEventArgs(SelectedPreset, StartDate, EndDate));
+            }
+        }
+
+        private void TriggerCustomRange()
+        {
+            if (SelectedPreset != DateRangePreset.Custom) return;
+
+            StartDate = _dtpStart.Value.Date;
+            EndDate = _dtpEnd.Value.Date.AddDays(1).AddTicks(-1);
+            RangeChanged?.Invoke(this, new DashboardDateRangeEventArgs(SelectedPreset, StartDate, EndDate));
+        }
+
+        private void UpdateButtonStyles()
+        {
+            StylePill(_btnToday, SelectedPreset == DateRangePreset.Today);
+            StylePill(_btn7Days, SelectedPreset == DateRangePreset.SevenDays);
+            StylePill(_btn1Month, SelectedPreset == DateRangePreset.OneMonth);
+            StylePill(_btnCustom, SelectedPreset == DateRangePreset.Custom);
+        }
+
+        private static void StylePill(Button btn, bool isActive)
+        {
+            if (isActive)
+            {
+                btn.BackColor = BrandPalette.ButtonPrimaryFill;
+                btn.ForeColor = BrandPalette.ButtonPrimaryText;
+                btn.Font = BrandPalette.BrandFontBold(8.5f);
+            }
+            else
+            {
+                btn.BackColor = BrandPalette.ButtonSecondaryFill;
+                btn.ForeColor = BrandPalette.ButtonSecondaryText;
+                btn.Font = BrandPalette.BrandFontRegular(8.5f);
+            }
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/PeakHoursHeatmapControl.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Dashboard chart #4 (shared): transaction density by hour (7am-9pm) x day of
+    /// week, as a self-painted heatmap grid. Self-painted rather than built on the
+    /// Chart control because there is no native heatmap series type — see
+    /// ai-dashboard-plan.txt section 2 for why this one chart breaks from the
+    /// Chart-control pattern the rest of the dashboard follows.
+    /// </summary>
+    public class PeakHoursHeatmapControl : UserControl
+    {
+        private readonly DashboardController _controller;
+        private Label _titleLabel = null!;
+        private Label _errorLabel = null!;
+        private Panel _gridHost = null!;
+        private readonly ToolTip _cellToolTip = new();
+
+        private const int StartHour = 7;
+        private const int EndHour = 21;   // inclusive
+        private static readonly string[] DayLabels = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+
+        private const int RowHeaderWidth = 40;
+        private const int ColHeaderHeight = 20;
+
+        private PeakHoursDto _data = new();
+
+        public PeakHoursHeatmapControl()
+        {
+            _controller = new DashboardController();
+            BuildLayout();
+            Load += async (s, e) => await ReloadAsync();
+        }
+
+        private void BuildLayout()
+        {
+            Dock = DockStyle.Fill;
+            BackColor = BrandPalette.SurfacePrimary;
+            Padding = new Padding(16);
+
+            _titleLabel = new Label
+            {
+                Text = "Peak Hours Transaction Velocity",
+                Dock = DockStyle.Top,
+                Height = 28,
+                Font = BrandPalette.BrandFontBold(11f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            _errorLabel = new Label
+            {
+                Dock = DockStyle.Bottom,
+                Height = 20,
+                Font = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.StatusNegativeFill,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+
+            _gridHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+            _gridHost.Paint += GridHost_Paint;
+            _gridHost.MouseMove += GridHost_MouseMove;
+            _gridHost.Resize += (s, e) => _gridHost.Invalidate();
+
+            Controls.Add(_gridHost);
+            Controls.Add(_titleLabel);
+            Controls.Add(_errorLabel);
+        }
+
+        private async Task ReloadAsync()
+        {
+            try
+            {
+                var data = await _controller.GetPeakHoursAsync();
+                BindData(data);
+            }
+            catch (Exception ex)
+            {
+                _errorLabel.Text = $"Could not load peak-hours data: {ex.Message}";
+            }
+        }
+
+        public void BindData(PeakHoursDto data)
+        {
+            _data = data ?? new PeakHoursDto();
+            _errorLabel.Text = string.Empty;
+            _gridHost.Invalidate();
+        }
+
+
+        // =====================================================================
+        // GRID GEOMETRY — shared by paint and hit-testing so they can't drift apart
+        // =====================================================================
+
+        private int HourCount => EndHour - StartHour + 1;
+
+        private (float cellWidth, float cellHeight) GetCellSize()
+        {
+            var width = Math.Max(1, _gridHost.ClientSize.Width - RowHeaderWidth);
+            var height = Math.Max(1, _gridHost.ClientSize.Height - ColHeaderHeight);
+            return ((float)width / HourCount, (float)height / DayLabels.Length);
+        }
+
+        // =====================================================================
+        // PAINT
+        // =====================================================================
+
+        private void GridHost_Paint(object? sender, PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            var (cellW, cellH) = GetCellSize();
+            var maxCount = _data.Cells.Count > 0 ? _data.Cells.Max(c => c.TransactionCount) : 0;
+
+            using var headerFont = BrandPalette.BrandFontRegular(8f);
+            using var cellFont = BrandPalette.BrandFontRegular(7.5f);
+            using var headerBrush = new SolidBrush(BrandPalette.NeutralTextMuted);
+
+            // Column headers (hours).
+            for (var h = 0; h < HourCount; h++)
+            {
+                var hour = StartHour + h;
+                var label = hour == 0 ? "12a" : hour < 12 ? $"{hour}a" : hour == 12 ? "12p" : $"{hour - 12}p";
+                var rect = new RectangleF(RowHeaderWidth + h * cellW, 0, cellW, ColHeaderHeight);
+                g.DrawString(label, headerFont, headerBrush, rect,
+                    new StringFormat { Alignment = StringAlignment.Center });
+            }
+
+            // Row headers (days) + cells.
+            for (var d = 0; d < DayLabels.Length; d++)
+            {
+                var rowRect = new RectangleF(0, ColHeaderHeight + d * cellH, RowHeaderWidth, cellH);
+                g.DrawString(DayLabels[d], headerFont, headerBrush, rowRect,
+                    new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center });
+
+                for (var h = 0; h < HourCount; h++)
+                {
+                    var hour = StartHour + h;
+                    var match = _data.Cells.FirstOrDefault(c => c.DayOfWeek == d && c.Hour == hour);
+                    var count = match?.TransactionCount ?? 0;
+
+                    var cellRect = new RectangleF(RowHeaderWidth + h * cellW, ColHeaderHeight + d * cellH, cellW, cellH);
+                    using var fillBrush = new SolidBrush(ColorForIntensity(count, maxCount));
+                    g.FillRectangle(fillBrush, cellRect);
+                    g.DrawRectangle(Pens.White, cellRect.X, cellRect.Y, cellRect.Width, cellRect.Height);
+
+                    if (count > 0 && cellW > 20)
+                    {
+                        var textColor = count > maxCount * 0.6 ? Color.White : BrandPalette.NeutralText;
+                        using var textBrush = new SolidBrush(textColor);
+                        g.DrawString(count.ToString(), cellFont, textBrush, cellRect,
+                            new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Light tint -> full brand color as count approaches the dataset max. An
+        /// empty cell (no orders in that hour/day) renders as a flat neutral tile
+        /// rather than white, so "no data" reads differently from "very low but
+        /// present" at a glance.
+        /// </summary>
+        private static Color ColorForIntensity(int count, int max)
+        {
+            if (count <= 0) return Color.FromArgb(244, 242, 238);
+            if (max <= 0) return BrandPalette.Tint75;
+
+            var ratio = Math.Clamp((double)count / max, 0.08, 1.0);
+            var brand = BrandPalette.Brand;
+            var bg = Color.FromArgb(250, 248, 244);
+
+            return Color.FromArgb(
+                (int)(bg.R + (brand.R - bg.R) * ratio),
+                (int)(bg.G + (brand.G - bg.G) * ratio),
+                (int)(bg.B + (brand.B - bg.B) * ratio));
+        }
+
+        // =====================================================================
+        // HOVER — shows exact count + revenue for the cell under the cursor
+        // =====================================================================
+
+        private (int day, int hour)? _lastHoverCell;
+
+        private void GridHost_MouseMove(object? sender, MouseEventArgs e)
+        {
+            var (cellW, cellH) = GetCellSize();
+
+            if (e.X < RowHeaderWidth || e.Y < ColHeaderHeight)
+            {
+                _cellToolTip.Hide(_gridHost);
+                _lastHoverCell = null;
+                return;
+            }
+
+            var h = (int)((e.X - RowHeaderWidth) / cellW);
+            var d = (int)((e.Y - ColHeaderHeight) / cellH);
+
+            if (h < 0 || h >= HourCount || d < 0 || d >= DayLabels.Length)
+            {
+                _cellToolTip.Hide(_gridHost);
+                _lastHoverCell = null;
+                return;
+            }
+
+            if (_lastHoverCell == (d, h)) return;
+            _lastHoverCell = (d, h);
+
+            var hour = StartHour + h;
+            var match = _data.Cells.FirstOrDefault(c => c.DayOfWeek == d && c.Hour == hour);
+            var count = match?.TransactionCount ?? 0;
+            var revenue = match?.Revenue ?? 0m;
+
+            _cellToolTip.Show(
+                $"{DayLabels[d]} {hour}:00 — {count} orders, ₱{revenue:0.##}",
+                _gridHost, e.X + 12, e.Y + 12, 3000);
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/AgeDemographicsControl.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Age Demographics vs. Average Order Value — Clean column chart.</summary>
+    public class AgeDemographicsControl : Panel
+    {
+        private readonly Chart _chart;
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+
+        private static readonly Color[] BracketColors =
+        {
+            BrandPalette.Brand,
+            BrandPalette.Tint50,
+            BrandPalette.Tint90,
+            Color.FromArgb(140, 95, 60),
+            Color.FromArgb(185, 145, 105),
+        };
+
+        public AgeDemographicsControl()
+        {
+            Height      = 280;
+            MinimumSize = new Size(100, 100);
+            Margin      = new Padding(0, 0, 0, 10);
+            BackColor   = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text      = "Age & Avg Spend",
+                Dock      = DockStyle.Top,
+                Height    = 32,
+                Padding   = new Padding(14, 8, 0, 0),
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = BrandPalette.Border };
+
+            _statusLabel = new Label
+            {
+                Text      = "No data yet.",
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _chart = new Chart
+            {
+                Dock            = DockStyle.Fill,
+                MinimumSize     = new Size(50, 50),
+                BackColor       = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+                Visible         = false,
+            };
+
+            var area = new ChartArea("MainArea")
+            {
+                BackColor   = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+            };
+            area.AxisX.MajorGrid.Enabled   = false;
+            area.AxisY.MajorGrid.LineColor  = BrandPalette.Border;
+            area.AxisX.Interval             = 1;
+            area.AxisX.IsMarginVisible      = true;
+            area.AxisX.LabelStyle.Font      = BrandPalette.BrandFontBold(8.5f);
+            area.AxisX.LabelStyle.ForeColor = BrandPalette.NeutralText;
+            area.AxisY.LabelStyle.Font      = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.Title                = "Avg Spend (₱)";
+            area.AxisY.TitleFont            = BrandPalette.BrandFontBold(8f);
+            area.AxisY.TitleForeColor       = BrandPalette.NeutralTextMuted;
+
+            _chart.ChartAreas.Add(area);
+
+            Controls.Add(_chart);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        public void BindData(AgeDemographicsAovDto data)
+        {
+            if (data.Brackets.Count == 0 || data.Brackets.All(b => b.ActiveMemberCount == 0 && b.AverageOrderValue == 0))
+            {
+                _statusLabel.Text    = "No age demographic data yet.";
+                _statusLabel.Visible = true;
+                _chart.Visible       = false;
+                return;
+            }
+
+            _statusLabel.Visible = false;
+            _chart.Visible       = true;
+            _chart.Series.Clear();
+
+            var seriesAov = new Series("AOV")
+            {
+                ChartType           = SeriesChartType.Column,
+                ChartArea           = "MainArea",
+                Color               = BrandPalette.Brand,
+                IsValueShownAsLabel = true,
+                Font                = BrandPalette.BrandFontBold(8.5f),
+                LabelForeColor      = BrandPalette.NeutralText,
+                BorderWidth         = 0,
+            };
+            seriesAov["PointWidth"] = "0.55";
+
+            int ci = 0;
+            foreach (var b in data.Brackets)
+            {
+                var idx = seriesAov.Points.AddXY(b.BracketLabel, (double)b.AverageOrderValue);
+                seriesAov.Points[idx].Label = $"₱{b.AverageOrderValue:0}";
+                seriesAov.Points[idx].Color = BracketColors[ci % BracketColors.Length];
+                ci++;
+            }
+
+            _chart.Series.Add(seriesAov);
+            _chart.Invalidate();
+        }
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/ActiveCampaignLiftControl.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Campaign Lift — Column (revenue) + Line (redemptions) dual-axis combo chart.</summary>
+    public class ActiveCampaignLiftControl : Panel
+    {
+        private readonly Chart _chart;
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+
+        public ActiveCampaignLiftControl()
+        {
+            Height      = 280;
+            MinimumSize = new Size(100, 100);
+            Margin      = new Padding(0, 0, 0, 10);
+            BackColor   = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text      = "Campaign Lift",
+                Dock      = DockStyle.Top,
+                Height    = 32,
+                Padding   = new Padding(14, 8, 0, 0),
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = BrandPalette.Border };
+
+            _statusLabel = new Label
+            {
+                Text      = "No data yet.",
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _chart = new Chart
+            {
+                Dock            = DockStyle.Fill,
+                MinimumSize     = new Size(50, 50),
+                BackColor       = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+                Visible         = false,
+            };
+
+            var area = new ChartArea("MainArea")
+            {
+                BackColor   = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+            };
+            area.AxisX.MajorGrid.LineColor = BrandPalette.Tint90;
+            area.AxisY.MajorGrid.LineColor = BrandPalette.Border;
+            area.AxisY2.MajorGrid.Enabled  = false;
+            area.AxisX.Interval            = 1;
+            area.AxisX.IsMarginVisible     = true;
+            area.AxisX.LabelStyle.Font     = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.LabelStyle.Font     = BrandPalette.BrandFontRegular(8f);
+            area.AxisY2.LabelStyle.Font    = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.Title               = "Revenue ₱";
+            area.AxisY.TitleFont           = BrandPalette.BrandFontBold(7.5f);
+            area.AxisY2.Title              = "Redemptions";
+            area.AxisY2.TitleFont          = BrandPalette.BrandFontBold(7.5f);
+
+            _chart.ChartAreas.Add(area);
+
+            var legend = new Legend("L")
+            {
+                Docking                 = Docking.Bottom,
+                Alignment               = StringAlignment.Center,
+                BackColor               = Color.Transparent,
+                Font                    = BrandPalette.BrandFontRegular(8f),
+                IsDockedInsideChartArea = false,
+            };
+            _chart.Legends.Add(legend);
+
+            Controls.Add(_chart);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        public void BindData(ActiveCampaignLiftDto data)
+        {
+            if (data.DailyPoints.Count == 0 || data.DailyPoints.All(p => p.DailyRevenue == 0 && p.DailyRedemptions == 0))
+            {
+                _statusLabel.Text    = "No campaign lift data this period.";
+                _statusLabel.Visible = true;
+                _chart.Visible       = false;
+                return;
+            }
+
+            _statusLabel.Visible = false;
+            _chart.Visible       = true;
+            _chart.Series.Clear();
+
+            var seriesRev = new Series("Revenue")
+            {
+                ChartType   = SeriesChartType.Column,
+                ChartArea   = "MainArea",
+                Legend      = "L",
+                Color       = BrandPalette.Tint50,
+                BorderWidth = 0,
+                YAxisType   = AxisType.Primary,
+            };
+            seriesRev["PointWidth"] = "0.55";
+
+            var seriesRed = new Series("Redemptions")
+            {
+                ChartType    = SeriesChartType.Line,
+                ChartArea    = "MainArea",
+                Legend       = "L",
+                Color        = BrandPalette.Brand,
+                BorderWidth  = 3,
+                MarkerStyle  = MarkerStyle.Circle,
+                MarkerSize   = 7,
+                YAxisType    = AxisType.Secondary,
+            };
+
+            foreach (var pt in data.DailyPoints)
+            {
+                seriesRev.Points.AddXY(pt.DateLabel, (double)pt.DailyRevenue);
+                seriesRed.Points.AddXY(pt.DateLabel, pt.DailyRedemptions);
+            }
+
+            _chart.Series.Add(seriesRev);
+            _chart.Series.Add(seriesRed);
+            _chart.Invalidate();
+        }
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/BaristaSalesPerformanceControl.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Barista revenue — simple column bar chart per barista.</summary>
+    public class BaristaSalesPerformanceControl : Panel
+    {
+        private readonly Chart _chart;
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+
+        private static readonly Color[] BarColors =
+        {
+            BrandPalette.Brand,
+            BrandPalette.Tint50,
+            BrandPalette.Tint90,
+            Color.FromArgb(90, 130, 190),
+            Color.FromArgb(160, 90, 160),
+        };
+
+        public BaristaSalesPerformanceControl()
+        {
+            Height      = 280;
+            MinimumSize = new Size(100, 100);
+            Margin      = new Padding(0, 0, 0, 10);
+            BackColor   = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text      = "Barista Sales",
+                Dock      = DockStyle.Top,
+                Height    = 32,
+                Padding   = new Padding(14, 8, 0, 0),
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = BrandPalette.Border };
+
+            _statusLabel = new Label
+            {
+                Text      = "No records yet.",
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _chart = new Chart
+            {
+                Dock            = DockStyle.Fill,
+                MinimumSize     = new Size(50, 50),
+                BackColor       = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+                Visible         = false,
+            };
+
+            var area = new ChartArea("MainArea")
+            {
+                BackColor   = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+            };
+            area.AxisX.MajorGrid.Enabled   = false;
+            area.AxisY.MajorGrid.LineColor  = BrandPalette.Border;
+            area.AxisX.Interval             = 1;
+            area.AxisX.IsMarginVisible      = true;
+            area.AxisX.LabelStyle.Font      = BrandPalette.BrandFontRegular(8.5f);
+            area.AxisY.LabelStyle.Font      = BrandPalette.BrandFontRegular(8.5f);
+            area.AxisX.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.Title                = "Revenue ₱";
+            area.AxisY.TitleFont            = BrandPalette.BrandFontBold(8f);
+
+            _chart.ChartAreas.Add(area);
+
+            Controls.Add(_chart);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        public void BindData(BaristaSalesPerformanceDto data)
+        {
+            if (data.Baristas.Count == 0 || data.Baristas.All(b => b.OrdersProcessed == 0))
+            {
+                _statusLabel.Text    = "No barista records yet.";
+                _statusLabel.Visible = true;
+                _chart.Visible       = false;
+                return;
+            }
+
+            _statusLabel.Visible = false;
+            _chart.Visible       = true;
+            _chart.Series.Clear();
+
+            var series = new Series("Revenue")
+            {
+                ChartType           = SeriesChartType.Column,
+                ChartArea           = "MainArea",
+                Color               = BrandPalette.Brand,
+                IsValueShownAsLabel = true,
+                Font                = BrandPalette.BrandFontBold(8.5f),
+                LabelForeColor      = BrandPalette.NeutralText,
+                BorderWidth         = 0,
+            };
+            series["PointWidth"] = "0.5";
+
+            int ci = 0;
+            foreach (var b in data.Baristas)
+            {
+                var idx = series.Points.AddXY(b.BaristaName, (double)b.TotalRevenue);
+                series.Points[idx].Label = $"₱{b.TotalRevenue:0}";
+                series.Points[idx].Color = BarColors[ci % BarColors.Length];
+                ci++;
+            }
+
+            _chart.Series.Add(series);
+            _chart.Invalidate();
+        }
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/CampaignRoiControl.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Campaign ROI — grouped column: Revenue driven vs. Discount cost per campaign.</summary>
+    public class CampaignRoiControl : Panel
+    {
+        private readonly Chart _chart;
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+
+        public CampaignRoiControl()
+        {
+            Height      = 280;
+            MinimumSize = new Size(100, 100);
+            Margin      = new Padding(0, 0, 0, 10);
+            BackColor   = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text      = "Campaign ROI",
+                Dock      = DockStyle.Top,
+                Height    = 32,
+                Padding   = new Padding(14, 8, 0, 0),
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = BrandPalette.Border };
+
+            _statusLabel = new Label
+            {
+                Text      = "No campaign data yet.",
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _chart = new Chart
+            {
+                Dock            = DockStyle.Fill,
+                MinimumSize     = new Size(50, 50),
+                BackColor       = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+                Visible         = false,
+            };
+
+            var area = new ChartArea("MainArea")
+            {
+                BackColor   = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+            };
+            area.AxisX.MajorGrid.Enabled   = false;
+            area.AxisY.MajorGrid.LineColor  = BrandPalette.Border;
+            area.AxisX.Interval             = 1;
+            area.AxisX.IsMarginVisible      = true;
+            area.AxisX.LabelStyle.Font      = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.LabelStyle.Font      = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.Title                = "Amount ₱";
+            area.AxisY.TitleFont            = BrandPalette.BrandFontBold(8f);
+
+            _chart.ChartAreas.Add(area);
+
+            var legend = new Legend("L")
+            {
+                Docking                 = Docking.Bottom,
+                Alignment               = StringAlignment.Center,
+                BackColor               = Color.Transparent,
+                Font                    = BrandPalette.BrandFontRegular(8f),
+                IsDockedInsideChartArea = false,
+            };
+            _chart.Legends.Add(legend);
+
+            Controls.Add(_chart);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        public void BindData(CampaignRoiDto data)
+        {
+            if (data.Campaigns.Count == 0 || data.Campaigns.All(c => c.TotalRedemptions == 0))
+            {
+                _statusLabel.Text    = "No campaign activity yet.";
+                _statusLabel.Visible = true;
+                _chart.Visible       = false;
+                return;
+            }
+
+            _statusLabel.Visible = false;
+            _chart.Visible       = true;
+            _chart.Series.Clear();
+
+            var seriesRev = new Series("Revenue Driven")
+            {
+                ChartType   = SeriesChartType.Column,
+                ChartArea   = "MainArea",
+                Legend      = "L",
+                Color       = BrandPalette.Brand,
+                BorderWidth = 0,
+            };
+            seriesRev["PointWidth"] = "0.5";
+
+            var seriesDisc = new Series("Discount Cost")
+            {
+                ChartType   = SeriesChartType.Column,
+                ChartArea   = "MainArea",
+                Legend      = "L",
+                Color       = BrandPalette.Tint50,
+                BorderWidth = 0,
+            };
+            seriesDisc["PointWidth"] = "0.5";
+
+            foreach (var c in data.Campaigns)
+            {
+                seriesRev.Points.AddXY(c.PromoName, (double)c.RevenueGenerated);
+                seriesDisc.Points.AddXY(c.PromoName, (double)c.TotalDiscountCost);
+            }
+
+            _chart.Series.Add(seriesRev);
+            _chart.Series.Add(seriesDisc);
+            _chart.Invalidate();
+        }
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/LoyaltyTierProgressionControl.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Loyalty Tier Progression — Stacked column chart.</summary>
+    public class LoyaltyTierProgressionControl : UserControl
+    {
+        private readonly DashboardController _controller;
+        private Chart _chart = null!;
+        private Label _titleLabel = null!;
+        private Label _errorLabel = null!;
+
+        public LoyaltyTierProgressionControl()
+        {
+            _controller = new DashboardController();
+            BuildLayout();
+            Load += async (s, e) => await ReloadAsync();
+        }
+
+        private void BuildLayout()
+        {
+            Dock        = DockStyle.Fill;
+            MinimumSize = new Size(100, 100);
+            BackColor   = BrandPalette.SurfacePrimary;
+            Padding     = new Padding(14, 10, 14, 10);
+
+            _titleLabel = new Label
+            {
+                Text      = "Loyalty Tier Progression",
+                Dock      = DockStyle.Top,
+                Height    = 28,
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            _errorLabel = new Label
+            {
+                Dock      = DockStyle.Bottom,
+                Height    = 18,
+                Font      = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.StatusNegativeFill,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+
+            _chart = new Chart
+            {
+                Dock            = DockStyle.Fill,
+                MinimumSize     = new Size(50, 50),
+                BackColor       = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+            };
+
+            var area = new ChartArea("main")
+            {
+                BackColor   = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+            };
+            area.AxisX.MajorGrid.Enabled   = false;
+            area.AxisY.MajorGrid.LineColor  = BrandPalette.Border;
+            area.AxisX.Interval             = 1;
+            area.AxisX.IsMarginVisible      = true;
+            area.AxisX.LabelStyle.Font      = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.LabelStyle.Font      = BrandPalette.BrandFontRegular(8f);
+            _chart.ChartAreas.Add(area);
+
+            var legend = new Legend("main")
+            {
+                Font                    = BrandPalette.BrandFontRegular(8f),
+                Docking                 = Docking.Bottom,
+                Alignment               = StringAlignment.Center,
+                BackColor               = Color.Transparent,
+                IsDockedInsideChartArea = false,
+            };
+            _chart.Legends.Add(legend);
+
+            AddSeries("Regular", BrandPalette.NeutralTextMuted);
+            AddSeries("Silver", Color.FromArgb(192, 192, 192));
+            AddSeries("Gold", Color.FromArgb(212, 175, 55));
+
+            Controls.Add(_chart);
+            Controls.Add(_titleLabel);
+            Controls.Add(_errorLabel);
+        }
+
+        private void AddSeries(string name, Color color)
+        {
+            var series = new Series(name)
+            {
+                ChartType   = SeriesChartType.StackedColumn,
+                ChartArea   = "main",
+                Legend      = "main",
+                Color       = color,
+                BorderWidth = 0,
+            };
+            series["PointWidth"] = "0.55";
+            _chart.Series.Add(series);
+        }
+
+        private async Task ReloadAsync()
+        {
+            try
+            {
+                var data = await _controller.GetLoyaltyTierProgressionAsync();
+                BindData(data);
+            }
+            catch (Exception ex)
+            {
+                _errorLabel.Text = $"Could not load loyalty tier data: {ex.Message}";
+            }
+        }
+
+        public void BindData(LoyaltyTierProgressionDto data)
+        {
+            if (data == null) return;
+
+            foreach (var series in _chart.Series)
+                series.Points.Clear();
+
+            foreach (var month in data.Months)
+            {
+                _chart.Series["Regular"].Points.AddXY(month.MonthLabel, month.RegularCount);
+                _chart.Series["Silver"].Points.AddXY(month.MonthLabel, month.SilverCount);
+                _chart.Series["Gold"].Points.AddXY(month.MonthLabel, month.GoldCount);
+            }
+
+            _errorLabel.Text = string.Empty;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/PosDiagnosticsControl.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Chart 7: Cash Register & POS Diagnostics (Manager Only).
+    /// Displays gross sales, campaign discounts, PWD/Senior discounts, and net sales totals.
+    /// Clean borderless card strip.
+    /// </summary>
+    public class PosDiagnosticsControl : Panel
+    {
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+        private readonly TableLayoutPanel _cardsGrid;
+
+        private readonly Label _grossValLabel = MakeValueLabel();
+        private readonly Label _campaignDiscValLabel = MakeValueLabel();
+        private readonly Label _pwdDiscValLabel = MakeValueLabel();
+        private readonly Label _netValLabel = MakeValueLabel();
+
+        public PosDiagnosticsControl()
+        {
+            Height = 160;
+            Margin = new Padding(0, 0, 0, 10);
+            BackColor = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text = "Register Summary",
+                Dock = DockStyle.Top,
+                Height = 32,
+                Padding = new Padding(14, 8, 0, 0),
+                Font = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+            };
+
+            _statusLabel = new Label
+            {
+                Text = "Loading register diagnostics...",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _cardsGrid = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 4,
+                RowCount = 1,
+                Padding = new Padding(12, 8, 12, 8),
+                Visible = false,
+            };
+
+            for (int i = 0; i < 4; i++)
+                _cardsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
+
+            _cardsGrid.Controls.Add(BuildMetricCard("Gross Sales", _grossValLabel), 0, 0);
+            _cardsGrid.Controls.Add(BuildMetricCard("Promo Discounts", _campaignDiscValLabel), 1, 0);
+            _cardsGrid.Controls.Add(BuildMetricCard("PWD / Senior", _pwdDiscValLabel), 2, 0);
+            _cardsGrid.Controls.Add(BuildMetricCard("Net Revenue", _netValLabel), 3, 0);
+
+            Controls.Add(_cardsGrid);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        private static Label MakeValueLabel() => new()
+        {
+            Text = "₱0.00",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = BrandPalette.BrandFontBold(13f),
+            ForeColor = BrandPalette.Brand,
+        };
+
+        private static Panel BuildMetricCard(string title, Label valueLabel)
+        {
+            var p = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = BrandPalette.SurfaceSecondary,
+                Padding = new Padding(8),
+                Margin = new Padding(4),
+            };
+
+            var titleLbl = new Label
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                Height = 22,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            p.Controls.Add(valueLabel);
+            p.Controls.Add(titleLbl);
+            return p;
+        }
+
+        public void BindData(PosDiagnosticsDto data)
+        {
+            _statusLabel.Visible = false;
+            _cardsGrid.Visible = true;
+
+            _grossValLabel.Text = $"₱{data.GrossSales:N2}\n({data.TotalTransactions} orders)";
+            _campaignDiscValLabel.Text = $"₱{data.TotalCampaignDiscounts:N2}\n({data.CampaignTransactionCount} used)";
+            _pwdDiscValLabel.Text = $"₱{data.TotalPwdSeniorDiscounts:N2}\n({data.PwdSeniorTransactionCount} used)";
+            _netValLabel.Text = $"₱{data.NetSales:N2}";
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/AuditLogSummaryControl.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Chart 10: Staff Overrides & Audit Logs (Admin Only).
+    /// Displays counts of manual point adjustments, bonus points awarded, and pending decisions.
+    /// Clean borderless card strip.
+    /// </summary>
+    public class AuditLogSummaryControl : Panel
+    {
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+        private readonly TableLayoutPanel _cardsGrid;
+
+        private readonly Label _totalAdjValLabel = MakeValueLabel();
+        private readonly Label _approvedAdjValLabel = MakeValueLabel();
+        private readonly Label _bonusPtsValLabel = MakeValueLabel();
+        private readonly Label _pendingCampValLabel = MakeValueLabel();
+
+        public AuditLogSummaryControl()
+        {
+            Height    = 160;
+            Margin    = new Padding(0, 0, 0, 10);
+            BackColor = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text      = "Staff Overrides & Governance Logs",
+                Dock      = DockStyle.Top,
+                Height    = 32,
+                Padding   = new Padding(14, 8, 0, 0),
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 1,
+                BackColor = BrandPalette.Border,
+            };
+
+            _statusLabel = new Label
+            {
+                Text      = "Loading audit summary log...",
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _cardsGrid = new TableLayoutPanel
+            {
+                Dock        = DockStyle.Fill,
+                ColumnCount = 4,
+                RowCount    = 1,
+                Padding     = new Padding(12, 8, 12, 8),
+                Visible     = false,
+            };
+
+            for (int i = 0; i < 4; i++)
+                _cardsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25f));
+
+            _cardsGrid.Controls.Add(BuildMetricCard("Point Requests", _totalAdjValLabel), 0, 0);
+            _cardsGrid.Controls.Add(BuildMetricCard("Approved Adjustments", _approvedAdjValLabel), 1, 0);
+            _cardsGrid.Controls.Add(BuildMetricCard("CSAT Bonus Points", _bonusPtsValLabel), 2, 0);
+            _cardsGrid.Controls.Add(BuildMetricCard("Pending Campaigns", _pendingCampValLabel), 3, 0);
+
+            Controls.Add(_cardsGrid);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        private static Label MakeValueLabel() => new()
+        {
+            Text      = "0",
+            Dock      = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font      = BrandPalette.BrandFontBold(13f),
+            ForeColor = BrandPalette.Brand,
+        };
+
+        private static Panel BuildMetricCard(string title, Label valueLabel)
+        {
+            var p = new Panel
+            {
+                Dock      = DockStyle.Fill,
+                BackColor = BrandPalette.SurfaceSecondary,
+                Padding   = new Padding(6),
+                Margin    = new Padding(4),
+            };
+
+            var titleLbl = new Label
+            {
+                Text      = title,
+                Dock      = DockStyle.Top,
+                Height    = 22,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(8.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            p.Controls.Add(valueLabel);
+            p.Controls.Add(titleLbl);
+            return p;
+        }
+
+        public void BindData(AuditLogSummaryDto data)
+        {
+            _statusLabel.Visible = false;
+            _cardsGrid.Visible   = true;
+
+            _totalAdjValLabel.Text     = $"{data.TotalManualPointAdjustments}";
+            _approvedAdjValLabel.Text  = $"{data.ApprovedPointAdjustments} approved ({data.RejectedPointAdjustments} rejected)";
+            _bonusPtsValLabel.Text     = $"{data.FeedbackBonusPointsAwarded} tickets";
+            _pendingCampValLabel.Text  = $"{data.PendingCampaignApprovals} pending";
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/FeedbackRatingDistributionControl.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>Customer rating distribution — vertical bar chart (1–5 stars).</summary>
+    public class FeedbackRatingDistributionControl : Panel
+    {
+        private readonly Chart _chart;
+        private readonly Label _titleLabel;
+        private readonly Label _statusLabel;
+
+        // Star rating colors: 1★ red → 5★ green
+        private static readonly Color[] StarColors =
+        {
+            Color.FromArgb(220,  60,  60),  // 1★
+            Color.FromArgb(230, 140,  40),  // 2★
+            Color.FromArgb(210, 180,  40),  // 3★
+            Color.FromArgb(100, 180,  80),  // 4★
+            Color.FromArgb( 50, 160,  80),  // 5★
+        };
+
+        public FeedbackRatingDistributionControl()
+        {
+            Height      = 320;
+            MinimumSize = new Size(100, 100);
+            Margin      = new Padding(0, 0, 0, 16);
+            BackColor   = BrandPalette.SurfacePrimary;
+
+            _titleLabel = new Label
+            {
+                Text      = "Ratings",
+                Dock      = DockStyle.Top,
+                Height    = 36,
+                Padding   = new Padding(14, 10, 0, 0),
+                Font      = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
+            var divider = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = BrandPalette.Border };
+
+            _statusLabel = new Label
+            {
+                Text      = "No reviews yet.",
+                Dock      = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font      = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            _chart = new Chart
+            {
+                Dock            = DockStyle.Fill,
+                MinimumSize     = new Size(50, 50),
+                BackColor       = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+                Visible         = false,
+            };
+
+            var area = new ChartArea("MainArea")
+            {
+                BackColor   = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+                Position    = new ElementPosition(2, 2, 96, 94),
+            };
+            area.AxisX.MajorGrid.Enabled   = false;
+            area.AxisY.MajorGrid.LineColor  = BrandPalette.Border;
+            area.AxisX.LabelStyle.Font      = BrandPalette.BrandFontRegular(9f);
+            area.AxisY.LabelStyle.Font      = BrandPalette.BrandFontRegular(8f);
+            area.AxisX.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.Title                = "Count";
+            area.AxisY.TitleFont            = BrandPalette.BrandFontBold(8f);
+
+            _chart.ChartAreas.Add(area);
+
+            Controls.Add(_chart);
+            Controls.Add(_statusLabel);
+            Controls.Add(divider);
+            Controls.Add(_titleLabel);
+        }
+
+        public void BindData(FeedbackRatingDistributionDto data)
+        {
+            if (data.TotalFeedbacks == 0)
+            {
+                _titleLabel.Text     = "Ratings";
+                _statusLabel.Text    = "No reviews yet.";
+                _statusLabel.Visible = true;
+                _chart.Visible       = false;
+                return;
+            }
+
+            _titleLabel.Text     = $"Ratings  ·  {data.AverageRating:0.0} ★  avg";
+            _statusLabel.Visible = false;
+            _chart.Visible       = true;
+            _chart.Series.Clear();
+
+            var series = new Series("Ratings")
+            {
+                ChartType           = SeriesChartType.Column,
+                ChartArea           = "MainArea",
+                Color               = BrandPalette.Brand,
+                IsValueShownAsLabel = true,
+                Font                = BrandPalette.BrandFontBold(8.5f),
+                LabelForeColor      = BrandPalette.NeutralText,
+                BorderWidth         = 0,
+            };
+
+            int i = 0;
+            foreach (var pt in data.RatingBreakdown)
+            {
+                var idx = series.Points.AddXY($"{pt.Rating} ★", pt.Count);
+                series.Points[idx].Label = $"{pt.Count}";
+                series.Points[idx].Color = StarColors[Math.Clamp(i, 0, StarColors.Length - 1)];
+                i++;
+            }
+
+            _chart.Series.Add(series);
+            _chart.Invalidate();
+        }
+    }
+}
+
+===== FILE: CRM_Morcaffein/Views/Controls/RevenueDetailModal.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Modal dialog for Total Revenue KPI pod.
+    /// Follows the standard CRM modal styling.
+    /// </summary>
+    public class RevenueDetailModal : Form
+    {
+        public RevenueDetailModal(PosDiagnosticsDto data)
+        {
+            Text = "Revenue Details";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(520, 480);
+            BackColor = BrandPalette.SurfacePrimary;
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            Padding = new Padding(24);
+
+            BuildLayout(data);
+        }
+
+        private void BuildLayout(PosDiagnosticsDto data)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Revenue Breakdown",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(14f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var subtitleLabel = new Label
+            {
+                Text = "Summary of gross sales, discounts applied, and net revenue.",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+
+            var btnRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+            };
+
+            var closeBtn = new Button
+            {
+                Text = "Close",
+                Width = 110,
+                Height = 36,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => Close();
+            btnRow.Controls.Add(closeBtn);
+
+            var gridPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 12, 0, 12),
+            };
+
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToOrderColumns = false,
+                EnableHeadersVisualStyles = false,
+                RowHeadersVisible = false,
+                BackgroundColor = BrandPalette.SurfacePrimary,
+                BorderStyle = BorderStyle.None,
+                GridColor = BrandPalette.Border,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeight = 34,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfaceSecondary,
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                    Font = BrandPalette.BrandFontBold(8.5f),
+                    Padding = new Padding(8, 4, 8, 4),
+                    SelectionBackColor = BrandPalette.SurfaceSecondary,
+                    SelectionForeColor = BrandPalette.NeutralTextMuted,
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfacePrimary,
+                    ForeColor = BrandPalette.NeutralText,
+                    Padding = new Padding(8, 6, 8, 6),
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.NeutralText,
+                },
+            };
+
+            var col1 = new DataGridViewTextBoxColumn { HeaderText = "Line Item", FillWeight = 60, SortMode = DataGridViewColumnSortMode.NotSortable };
+            var col2 = new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Amount",
+                FillWeight = 40,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Alignment = DataGridViewContentAlignment.MiddleRight,
+                    Font = BrandPalette.BrandFontBold(9.5f),
+                    ForeColor = BrandPalette.Brand,
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.Brand,
+                }
+            };
+
+            grid.Columns.Add(col1);
+            grid.Columns.Add(col2);
+
+            void AddRow(string label, decimal amount, bool isNegative = false, bool isBold = false)
+            {
+                var idx = grid.Rows.Add(label, $"₱{amount:N2}");
+                if (isNegative)
+                    grid.Rows[idx].DefaultCellStyle.ForeColor = BrandPalette.StatusNegativeFill;
+                if (isBold)
+                {
+                    grid.Rows[idx].DefaultCellStyle.Font = BrandPalette.BrandFontBold(10f);
+                    grid.Rows[idx].DefaultCellStyle.BackColor = BrandPalette.SurfaceSecondary;
+                    grid.Rows[idx].DefaultCellStyle.ForeColor = BrandPalette.Brand;
+                }
+            }
+
+            AddRow("Gross Sales", data.GrossSales);
+            AddRow("Campaign Promo Discounts", data.TotalCampaignDiscounts, isNegative: true);
+            AddRow("PWD / Senior Discounts", data.TotalPwdSeniorDiscounts, isNegative: true);
+            AddRow("Net Revenue", data.NetSales, isBold: true);
+
+            grid.Rows.Add("", "");
+            grid.Rows.Add($"Completed Orders", $"{data.TotalTransactions:N0} orders");
+            var aov = data.TotalTransactions > 0 ? data.NetSales / data.TotalTransactions : 0m;
+            grid.Rows.Add("Average Sales per Order", $"₱{aov:N2}");
+
+            gridPanel.Controls.Add(grid);
+
+            Controls.Add(gridPanel);
+            Controls.Add(btnRow);
+            Controls.Add(divider);
+            Controls.Add(subtitleLabel);
+            Controls.Add(titleLabel);
+
+            CancelButton = closeBtn;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/SalesPerOrderDetailModal.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Modal dialog for Sales per Order KPI pod.
+    /// Shows recent transaction history with order date, customer, items, and total amount.
+    /// </summary>
+    public class SalesPerOrderDetailModal : Form
+    {
+        public SalesPerOrderDetailModal(List<RecentOrderSummaryDto> orders, decimal aov)
+        {
+            Text = "Order Sales History";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(620, 520);
+            BackColor = BrandPalette.SurfacePrimary;
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            Padding = new Padding(24);
+
+            BuildLayout(orders, aov);
+        }
+
+        private void BuildLayout(List<RecentOrderSummaryDto> orders, decimal aov)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Sales per Order History",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(14f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var subtitleLabel = new Label
+            {
+                Text = $"Recent completed orders · Average Order Value: ₱{aov:N2}",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+
+            var btnRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+            };
+
+            var closeBtn = new Button
+            {
+                Text = "Close",
+                Width = 110,
+                Height = 36,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => Close();
+            btnRow.Controls.Add(closeBtn);
+
+            var gridPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 12, 0, 12),
+            };
+
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToOrderColumns = false,
+                EnableHeadersVisualStyles = false,
+                RowHeadersVisible = false,
+                BackgroundColor = BrandPalette.SurfacePrimary,
+                BorderStyle = BorderStyle.None,
+                GridColor = BrandPalette.Border,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeight = 34,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfaceSecondary,
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                    Font = BrandPalette.BrandFontBold(8.5f),
+                    Padding = new Padding(8, 4, 8, 4),
+                    SelectionBackColor = BrandPalette.SurfaceSecondary,
+                    SelectionForeColor = BrandPalette.NeutralTextMuted,
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfacePrimary,
+                    ForeColor = BrandPalette.NeutralText,
+                    Padding = new Padding(8, 6, 8, 6),
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.NeutralText,
+                },
+            };
+
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Date & Time", FillWeight = 30, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Order #",     FillWeight = 16, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Customer",    FillWeight = 30, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Items",       FillWeight = 12, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Total",
+                FillWeight = 22,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Alignment = DataGridViewContentAlignment.MiddleRight,
+                    Font = BrandPalette.BrandFontBold(9.5f),
+                    ForeColor = BrandPalette.Brand,
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.Brand,
+                }
+            });
+
+            if (orders.Count == 0)
+            {
+                grid.Rows.Add("No completed orders recorded in this period.", "", "", "", "");
+            }
+            else
+            {
+                foreach (var o in orders)
+                {
+                    grid.Rows.Add(
+                        o.OrderDate.ToLocalTime().ToString("MMM dd, yyyy h:mm tt"),
+                        $"#{o.OrderId}",
+                        o.CustomerName,
+                        o.ItemCount.ToString(),
+                        $"₱{o.TotalAmount:N2}"
+                    );
+                }
+            }
+
+            gridPanel.Controls.Add(grid);
+
+            Controls.Add(gridPanel);
+            Controls.Add(btnRow);
+            Controls.Add(divider);
+            Controls.Add(subtitleLabel);
+            Controls.Add(titleLabel);
+
+            CancelButton = closeBtn;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/PromosRedeemedDetailModal.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Modal dialog for Promos Redeemed KPI pod.
+    /// Shows campaign promo redemption performance and discount impact.
+    /// </summary>
+    public class PromosRedeemedDetailModal : Form
+    {
+        public PromosRedeemedDetailModal(CampaignRoiDto data)
+        {
+            Text = "Promotion Redemptions";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(620, 480);
+            BackColor = BrandPalette.SurfacePrimary;
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            Padding = new Padding(24);
+
+            BuildLayout(data);
+        }
+
+        private void BuildLayout(CampaignRoiDto data)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Promotions & Campaign Redemptions",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(14f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var totalRedemptions = data.Campaigns.Sum(c => c.TotalRedemptions);
+            var totalDiscounts = data.Campaigns.Sum(c => c.TotalDiscountCost);
+
+            var subtitleLabel = new Label
+            {
+                Text = $"Total Redemptions: {totalRedemptions:N0}  ·  Total Savings Given: ₱{totalDiscounts:N2}",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+
+            var btnRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+            };
+
+            var closeBtn = new Button
+            {
+                Text = "Close",
+                Width = 110,
+                Height = 36,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => Close();
+            btnRow.Controls.Add(closeBtn);
+
+            var gridPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 12, 0, 12),
+            };
+
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToOrderColumns = false,
+                EnableHeadersVisualStyles = false,
+                RowHeadersVisible = false,
+                BackgroundColor = BrandPalette.SurfacePrimary,
+                BorderStyle = BorderStyle.None,
+                GridColor = BrandPalette.Border,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeight = 34,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfaceSecondary,
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                    Font = BrandPalette.BrandFontBold(8.5f),
+                    Padding = new Padding(8, 4, 8, 4),
+                    SelectionBackColor = BrandPalette.SurfaceSecondary,
+                    SelectionForeColor = BrandPalette.NeutralTextMuted,
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfacePrimary,
+                    ForeColor = BrandPalette.NeutralText,
+                    Padding = new Padding(8, 6, 8, 6),
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.NeutralText,
+                },
+            };
+
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Promo Campaign", FillWeight = 40, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Redeemed",
+                FillWeight = 20,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle { Alignment = DataGridViewContentAlignment.MiddleCenter }
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Discount Given",
+                FillWeight = 20,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Alignment = DataGridViewContentAlignment.MiddleRight,
+                    ForeColor = BrandPalette.StatusNegativeFill
+                }
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Revenue Driven",
+                FillWeight = 20,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Alignment = DataGridViewContentAlignment.MiddleRight,
+                    Font = BrandPalette.BrandFontBold(9.5f),
+                    ForeColor = BrandPalette.Brand,
+                }
+            });
+
+            if (data.Campaigns.Count == 0)
+            {
+                grid.Rows.Add("No campaign redemptions recorded.", "0", "₱0.00", "₱0.00");
+            }
+            else
+            {
+                foreach (var c in data.Campaigns)
+                {
+                    grid.Rows.Add(
+                        c.PromoName,
+                        $"{c.TotalRedemptions} times",
+                        $"₱{c.TotalDiscountCost:N2}",
+                        $"₱{c.RevenueGenerated:N2}"
+                    );
+                }
+            }
+
+            gridPanel.Controls.Add(grid);
+
+            Controls.Add(gridPanel);
+            Controls.Add(btnRow);
+            Controls.Add(divider);
+            Controls.Add(subtitleLabel);
+            Controls.Add(titleLabel);
+
+            CancelButton = closeBtn;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/CustomerHappinessDetailModal.cs =====
+using System.Windows.Forms.DataVisualization.Charting;
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Modal dialog for Customer Happiness (CSAT) KPI pod.
+    /// Displays customer feedback rating breakdown (1-5 stars) in a clean chart modal.
+    /// </summary>
+    public class CustomerHappinessDetailModal : Form
+    {
+        private static readonly Color[] StarColors =
+        {
+            Color.FromArgb(220,  60,  60),  // 1★
+            Color.FromArgb(230, 140,  40),  // 2★
+            Color.FromArgb(210, 180,  40),  // 3★
+            Color.FromArgb(100, 180,  80),  // 4★
+            Color.FromArgb( 50, 160,  80),  // 5★
+        };
+
+        public CustomerHappinessDetailModal(FeedbackRatingDistributionDto data)
+        {
+            Text = "Customer Satisfaction (CSAT)";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(580, 480);
+            BackColor = BrandPalette.SurfacePrimary;
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            Padding = new Padding(24);
+
+            BuildLayout(data);
+        }
+
+        private void BuildLayout(FeedbackRatingDistributionDto data)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Customer Satisfaction (CSAT)",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(14f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var subtitleLabel = new Label
+            {
+                Text = data.TotalFeedbacks > 0
+                    ? $"Average Rating: {data.AverageRating:0.0} ★  ·  Total Reviews: {data.TotalFeedbacks:N0}"
+                    : "No feedback ratings submitted yet.",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+
+            var btnRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+            };
+
+            var closeBtn = new Button
+            {
+                Text = "Close",
+                Width = 110,
+                Height = 36,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => Close();
+            btnRow.Controls.Add(closeBtn);
+
+            var chartPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 12, 0, 12),
+            };
+
+            var chart = new Chart
+            {
+                Dock = DockStyle.Fill,
+                BackColor = BrandPalette.SurfacePrimary,
+                BorderlineColor = Color.Transparent,
+                BorderlineWidth = 0,
+            };
+
+            var area = new ChartArea("MainArea")
+            {
+                BackColor = BrandPalette.SurfacePrimary,
+                BorderColor = Color.Transparent,
+                BorderWidth = 0,
+                Position = new ElementPosition(2, 2, 96, 94),
+            };
+            area.AxisX.MajorGrid.Enabled = false;
+            area.AxisY.MajorGrid.LineColor = BrandPalette.Border;
+            area.AxisX.LabelStyle.Font = BrandPalette.BrandFontBold(9.5f);
+            area.AxisY.LabelStyle.Font = BrandPalette.BrandFontRegular(8.5f);
+            area.AxisX.LabelStyle.ForeColor = BrandPalette.NeutralText;
+            area.AxisY.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.Title = "Ratings Count";
+            area.AxisY.TitleFont = BrandPalette.BrandFontBold(8.5f);
+            area.AxisY.TitleForeColor = BrandPalette.NeutralTextMuted;
+
+            chart.ChartAreas.Add(area);
+
+            var series = new Series("Ratings")
+            {
+                ChartType = SeriesChartType.Column,
+                ChartArea = "MainArea",
+                Color = BrandPalette.Brand,
+                IsValueShownAsLabel = true,
+                Font = BrandPalette.BrandFontBold(9f),
+                LabelForeColor = BrandPalette.NeutralText,
+                BorderWidth = 0,
+            };
+
+            int i = 0;
+            foreach (var pt in data.RatingBreakdown)
+            {
+                var idx = series.Points.AddXY($"{pt.Rating} ★", pt.Count);
+                series.Points[idx].Label = $"{pt.Count} ({pt.Percentage}%)";
+                series.Points[idx].Color = StarColors[Math.Clamp(i, 0, StarColors.Length - 1)];
+                i++;
+            }
+
+            chart.Series.Add(series);
+            chartPanel.Controls.Add(chart);
+
+            Controls.Add(chartPanel);
+            Controls.Add(btnRow);
+            Controls.Add(divider);
+            Controls.Add(subtitleLabel);
+            Controls.Add(titleLabel);
+
+            CancelButton = closeBtn;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/CustomerLtvDetailModal.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Modal dialog for Member Lifetime Value KPI pod (Admin).
+    /// </summary>
+    public class CustomerLtvDetailModal : Form
+    {
+        public CustomerLtvDetailModal(CustomerLtvChurnDto data)
+        {
+            Text = "Customer Lifetime Value (LTV)";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(540, 440);
+            BackColor = BrandPalette.SurfacePrimary;
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            Padding = new Padding(24);
+
+            BuildLayout(data);
+        }
+
+        private void BuildLayout(CustomerLtvChurnDto data)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Member Lifetime Value & Churn Risk",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(14f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var subtitleLabel = new Label
+            {
+                Text = $"Overall Average LTV: ₱{data.OverallAverageLtv:N2}  ·  At-Risk Members: {data.AtRiskHighTierCount}",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+
+            var btnRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+            };
+
+            var closeBtn = new Button
+            {
+                Text = "Close",
+                Width = 110,
+                Height = 36,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => Close();
+            btnRow.Controls.Add(closeBtn);
+
+            var gridPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 12, 0, 12),
+            };
+
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToOrderColumns = false,
+                EnableHeadersVisualStyles = false,
+                RowHeadersVisible = false,
+                BackgroundColor = BrandPalette.SurfacePrimary,
+                BorderStyle = BorderStyle.None,
+                GridColor = BrandPalette.Border,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeight = 34,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfaceSecondary,
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                    Font = BrandPalette.BrandFontBold(8.5f),
+                    Padding = new Padding(8, 4, 8, 4),
+                    SelectionBackColor = BrandPalette.SurfaceSecondary,
+                    SelectionForeColor = BrandPalette.NeutralTextMuted,
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfacePrimary,
+                    ForeColor = BrandPalette.NeutralText,
+                    Padding = new Padding(8, 6, 8, 6),
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.NeutralText,
+                },
+            };
+
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Loyalty Tier", FillWeight = 50, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Average Member Spend",
+                FillWeight = 50,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Alignment = DataGridViewContentAlignment.MiddleRight,
+                    Font = BrandPalette.BrandFontBold(9.5f),
+                    ForeColor = BrandPalette.Brand,
+                }
+            });
+
+            grid.Rows.Add("Regular Tier", $"₱{data.RegularTierAvgLtv:N2}");
+            grid.Rows.Add("Silver Tier (VIP)", $"₱{data.SilverTierAvgLtv:N2}");
+            grid.Rows.Add("Gold Tier (Elite)", $"₱{data.GoldTierAvgLtv:N2}");
+            grid.Rows.Add("", "");
+            grid.Rows.Add("At-Risk High-Tier Members (>14d inactive)", $"{data.AtRiskHighTierCount} members");
+
+            gridPanel.Controls.Add(grid);
+
+            Controls.Add(gridPanel);
+            Controls.Add(btnRow);
+            Controls.Add(divider);
+            Controls.Add(subtitleLabel);
+            Controls.Add(titleLabel);
+
+            CancelButton = closeBtn;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/AuditSummaryDetailModal.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Modal dialog for Staff Overrides & Audit KPI pod (Admin).
+    /// </summary>
+    public class AuditSummaryDetailModal : Form
+    {
+        public AuditSummaryDetailModal(AuditLogSummaryDto data)
+        {
+            Text = "Staff Overrides & Governance";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(540, 440);
+            BackColor = BrandPalette.SurfacePrimary;
+            Font = BrandPalette.BrandFontRegular(9.5f);
+            Padding = new Padding(24);
+
+            BuildLayout(data);
+        }
+
+        private void BuildLayout(AuditLogSummaryDto data)
+        {
+            var titleLabel = new Label
+            {
+                Text = "Staff Overrides & Governance",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontBold(14f),
+                ForeColor = BrandPalette.NeutralText,
+            };
+
+            var subtitleLabel = new Label
+            {
+                Text = "Summary of point adjustments, feedback bonuses, and campaign approvals.",
+                Dock = DockStyle.Top,
+                Height = 30,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+
+            var divider = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 1,
+                BackColor = BrandPalette.Border,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+
+            var btnRow = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+            };
+
+            var closeBtn = new Button
+            {
+                Text = "Close",
+                Width = 110,
+                Height = 36,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
+                Font = BrandPalette.BrandFontBold(9.5f),
+                Cursor = Cursors.Hand,
+            };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Click += (s, e) => Close();
+            btnRow.Controls.Add(closeBtn);
+
+            var gridPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 12, 0, 12),
+            };
+
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                AllowUserToOrderColumns = false,
+                EnableHeadersVisualStyles = false,
+                RowHeadersVisible = false,
+                BackgroundColor = BrandPalette.SurfacePrimary,
+                BorderStyle = BorderStyle.None,
+                GridColor = BrandPalette.Border,
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ColumnHeadersHeight = 34,
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfaceSecondary,
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                    Font = BrandPalette.BrandFontBold(8.5f),
+                    Padding = new Padding(8, 4, 8, 4),
+                    SelectionBackColor = BrandPalette.SurfaceSecondary,
+                    SelectionForeColor = BrandPalette.NeutralTextMuted,
+                },
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    BackColor = BrandPalette.SurfacePrimary,
+                    ForeColor = BrandPalette.NeutralText,
+                    Padding = new Padding(8, 6, 8, 6),
+                    SelectionBackColor = BrandPalette.Tint90,
+                    SelectionForeColor = BrandPalette.NeutralText,
+                },
+            };
+
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Governance Item", FillWeight = 60, SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = "Count",
+                FillWeight = 40,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Alignment = DataGridViewContentAlignment.MiddleRight,
+                    Font = BrandPalette.BrandFontBold(9.5f),
+                    ForeColor = BrandPalette.Brand,
+                }
+            });
+
+            grid.Rows.Add("Total Manual Point Adjustment Requests", $"{data.TotalManualPointAdjustments:N0}");
+            grid.Rows.Add("Approved Point Adjustments", $"{data.ApprovedPointAdjustments:N0}");
+            grid.Rows.Add("Rejected Point Adjustments", $"{data.RejectedPointAdjustments:N0}");
+            grid.Rows.Add("Feedback Bonus Points Awarded", $"{data.FeedbackBonusPointsAwarded:N0}");
+            grid.Rows.Add("Pending Campaign Approvals", $"{data.PendingCampaignApprovals:N0}");
+
+            gridPanel.Controls.Add(grid);
+
+            Controls.Add(gridPanel);
+            Controls.Add(btnRow);
+            Controls.Add(divider);
+            Controls.Add(subtitleLabel);
+            Controls.Add(titleLabel);
+
+            CancelButton = closeBtn;
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/ManagerDashboardView.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Store Manager's Bento Grid Dashboard View.
+    /// Clean 1 - 2 - 2 - 1 lineup with spacious heatmap and borderless cards.
+    /// </summary>
+    public class ManagerDashboardView : UserControl
+    {
+        private readonly DashboardController _controller;
+
+        private DashboardDateRangeFilterControl _dateFilter = null!;
+
+        // KPI Pods (Top Strip)
+        private KpiSummaryPodControl _revenuePod = null!;
+        private KpiSummaryPodControl _ordersPod  = null!;
+        private KpiSummaryPodControl _promosPod  = null!;
+        private KpiSummaryPodControl _csatPod    = null!;
+
+        // Charts (1 - 2 - 2 - 1 Lineup)
+        private PeakHoursHeatmapControl         _peakHoursCard      = null!; // Row 1 (1 chart - full width)
+        private AgeDemographicsControl          _demographicsCard   = null!; // Row 2 Left
+        private LoyaltyTierProgressionControl   _loyaltyTierCard    = null!; // Row 2 Right
+        private ActiveCampaignLiftControl       _campaignLiftCard   = null!; // Row 3 Left
+        private BaristaSalesPerformanceControl _baristaSalesCard   = null!; // Row 3 Right
+        private PosDiagnosticsControl          _posDiagnosticsCard = null!; // Row 4 (1 full-width card strip)
+
+        // Cached DTOs for KPI modals
+        private PosDiagnosticsDto?             _latestPos;
+        private List<RecentOrderSummaryDto>    _latestRecentOrders = new();
+        private CampaignRoiDto?                _latestCampaignRoi;
+        private FeedbackRatingDistributionDto? _latestCsat;
+        private decimal                        _latestAov;
+
+        private Panel            _contentHost    = null!;
+        private TableLayoutPanel _bentoContainer = null!;
+
+        public ManagerDashboardView()
+        {
+            _controller = new DashboardController();
+            MinimumSize = new Size(600, 400);
+
+            SuspendLayout();
+            BuildBentoLayout();
+            ResumeLayout(false);
+
+            Load += async (s, e) => { SyncWidth(); await ReloadAsync(); };
+        }
+
+        private void BuildBentoLayout()
+        {
+            Dock      = DockStyle.Fill;
+            BackColor = BrandPalette.SurfaceSecondary;
+
+            // ---- Header ----
+            var header = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 52,
+                BackColor = BrandPalette.SurfacePrimary,
+                Padding   = new Padding(20, 0, 20, 0),
+            };
+
+            var title = new Label
+            {
+                Text      = "Store Manager Dashboard",
+                Dock      = DockStyle.Left,
+                AutoSize  = true,
+                Font      = BrandPalette.BrandFontBold(13f),
+                ForeColor = BrandPalette.NeutralText,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+
+            _dateFilter = new DashboardDateRangeFilterControl { Dock = DockStyle.Right };
+            _dateFilter.RangeChanged += async (s, e) => await ReloadAsync();
+
+            var hDiv = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = BrandPalette.Border };
+
+            header.Controls.Add(_dateFilter);
+            header.Controls.Add(title);
+            header.Controls.Add(hDiv);
+
+            // ---- Content Host ----
+            _contentHost = new Panel
+            {
+                Dock       = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor  = BrandPalette.SurfaceSecondary,
+                Padding    = new Padding(16, 12, 16, 16),
+            };
+
+            _bentoContainer = new TableLayoutPanel
+            {
+                Location        = new Point(16, 12),
+                Width           = 900,
+                ColumnCount     = 1,
+                RowCount        = 5,
+                AutoSize        = true,
+                AutoSizeMode    = AutoSizeMode.GrowAndShrink,
+                BackColor       = Color.Transparent,
+                CellBorderStyle = TableLayoutPanelCellBorderStyle.None,
+            };
+            _bentoContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            // ---- Top Strip: KPI Pods (4 Equal Columns) ----
+            var kpiRow = MakeBentoRow(4, 84, bottomGap: 10);
+            _revenuePod = new KpiSummaryPodControl("Total Revenue",     "₱0")    { Dock = DockStyle.Fill, Margin = new Padding(3) };
+            _ordersPod  = new KpiSummaryPodControl("Sales per Order",   "₱0.00") { Dock = DockStyle.Fill, Margin = new Padding(3) };
+            _promosPod  = new KpiSummaryPodControl("Promos Redeemed",   "0")     { Dock = DockStyle.Fill, Margin = new Padding(3) };
+            _csatPod    = new KpiSummaryPodControl("Customer Happiness", "—")    { Dock = DockStyle.Fill, Margin = new Padding(3) };
+
+            _revenuePod.CardClicked += (s, e) => ShowRevenueModal();
+            _ordersPod.CardClicked  += (s, e) => ShowSalesPerOrderModal();
+            _promosPod.CardClicked  += (s, e) => ShowPromosModal();
+            _csatPod.CardClicked   += (s, e) => ShowCsatModal();
+
+            kpiRow.Controls.Add(_revenuePod, 0, 0);
+            kpiRow.Controls.Add(_ordersPod,  1, 0);
+            kpiRow.Controls.Add(_promosPod,  2, 0);
+            kpiRow.Controls.Add(_csatPod,    3, 0);
+
+            // ---- Row 1 (1 chart): Peak Hours Transaction Velocity (Large, Full Width) ----
+            var peakRow = MakeBentoRow(1, 245, bottomGap: 10);
+            _peakHoursCard = new PeakHoursHeatmapControl
+            {
+                Dock        = DockStyle.Fill,
+                Margin      = new Padding(3),
+                MinimumSize = new Size(100, 100)
+            };
+            peakRow.Controls.Add(_peakHoursCard, 0, 0);
+
+            // ---- Row 2 (2 charts): Age Demographics (50%) + Loyalty Tier (50%) ----
+            var row2 = MakeBentoRow(2, 255, bottomGap: 10);
+            custRowStyles(row2, 50f, 50f);
+            _demographicsCard = new AgeDemographicsControl        { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            _loyaltyTierCard  = new LoyaltyTierProgressionControl { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            row2.Controls.Add(_demographicsCard, 0, 0);
+            row2.Controls.Add(_loyaltyTierCard,  1, 0);
+
+            // ---- Row 3 (2 charts): Campaign Lift (50%) + Barista Sales (50%) ----
+            var row3 = MakeBentoRow(2, 255, bottomGap: 10);
+            custRowStyles(row3, 50f, 50f);
+            _campaignLiftCard = new ActiveCampaignLiftControl       { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            _baristaSalesCard = new BaristaSalesPerformanceControl  { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            row3.Controls.Add(_campaignLiftCard, 0, 0);
+            row3.Controls.Add(_baristaSalesCard, 1, 0);
+
+            // ---- Row 4 (1 card strip): Cash Register & POS Diagnostics (Full Width) ----
+            var row4 = MakeBentoRow(1, 150, bottomGap: 4);
+            _posDiagnosticsCard = new PosDiagnosticsControl { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            row4.Controls.Add(_posDiagnosticsCard, 0, 0);
+
+            // Assemble 1 - 2 - 2 - 1 lineup
+            _bentoContainer.Controls.Add(kpiRow,  0, 0);
+            _bentoContainer.Controls.Add(peakRow, 0, 1);
+            _bentoContainer.Controls.Add(row2,    0, 2);
+            _bentoContainer.Controls.Add(row3,    0, 3);
+            _bentoContainer.Controls.Add(row4,    0, 4);
+
+            _contentHost.Controls.Add(_bentoContainer);
+            _contentHost.Resize += (s, e) => SyncWidth();
+
+            Controls.Add(_contentHost);
+            Controls.Add(header);
+        }
+
+        private static void custRowStyles(TableLayoutPanel row, float col1, float col2)
+        {
+            row.ColumnStyles.Clear();
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, col1));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, col2));
+        }
+
+        private static TableLayoutPanel MakeBentoRow(int columns, int height, int bottomGap)
+        {
+            var row = new TableLayoutPanel
+            {
+                Dock        = DockStyle.Top,
+                Height      = height,
+                ColumnCount = columns,
+                RowCount    = 1,
+                Margin      = new Padding(0, 0, 0, bottomGap),
+                BackColor   = Color.Transparent,
+            };
+            for (int i = 0; i < columns; i++)
+                row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
+            return row;
+        }
+
+        private void SyncWidth()
+        {
+            if (_contentHost == null || _bentoContainer == null) return;
+            var w = Math.Max(700,
+                _contentHost.ClientSize.Width
+                - _contentHost.Padding.Horizontal
+                - SystemInformation.VerticalScrollBarWidth);
+            _bentoContainer.Width = w;
+            foreach (Control row in _bentoContainer.Controls)
+                row.Width = w;
+        }
+
+        private async Task ReloadAsync()
+        {
+            try
+            {
+                var days = _dateFilter.SelectedPreset switch
+                {
+                    DateRangePreset.Today      => 1,
+                    DateRangePreset.SevenDays  => 7,
+                    _                          => 30,
+                };
+
+                var months = Math.Max(1, days / 30);
+                if (days <= 7) months = 1;
+
+                // 1. Static Velocity Heatmap (Not affected by range filter)
+                _peakHoursCard.BindData(await _controller.GetPeakHoursAsync());
+
+                // 2. Date-filtered metrics
+                _latestPos = await _controller.GetPosDiagnosticsAsync(days);
+                _posDiagnosticsCard.BindData(_latestPos);
+
+                _latestAov = _latestPos.TotalTransactions > 0 ? _latestPos.NetSales / _latestPos.TotalTransactions : 0m;
+                _revenuePod.UpdateData($"₱{_latestPos.NetSales:N0}");
+                _ordersPod.UpdateData($"₱{_latestAov:N2}");
+                _promosPod.UpdateData($"{_latestPos.CampaignTransactionCount:N0}");
+
+                _latestCsat = await _controller.GetFeedbackRatingsAsync(days);
+                _csatPod.UpdateData(_latestCsat.TotalFeedbacks > 0 ? $"{_latestCsat.AverageRating:0.0} ★" : "—");
+
+                _latestRecentOrders = await _controller.GetRecentOrdersAsync(days, 15);
+                _latestCampaignRoi = await _controller.GetCampaignRoiAsync(days);
+
+                _demographicsCard.BindData(await _controller.GetAgeDemographicsAsync(days));
+                _loyaltyTierCard.BindData(await _controller.GetLoyaltyTierProgressionAsync(months));
+                _campaignLiftCard.BindData(await _controller.GetCampaignLiftAsync(days));
+                _baristaSalesCard.BindData(await _controller.GetBaristaSalesAsync(days));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(FindForm(), ex.Message, "Dashboard error");
+            }
+        }
+
+        private void ShowRevenueModal()
+        {
+            if (_latestPos == null) return;
+            using var modal = new RevenueDetailModal(_latestPos);
+            modal.ShowDialog(FindForm());
+        }
+
+        private void ShowSalesPerOrderModal()
+        {
+            using var modal = new SalesPerOrderDetailModal(_latestRecentOrders, _latestAov);
+            modal.ShowDialog(FindForm());
+        }
+
+        private void ShowPromosModal()
+        {
+            if (_latestCampaignRoi == null) return;
+            using var modal = new PromosRedeemedDetailModal(_latestCampaignRoi);
+            modal.ShowDialog(FindForm());
+        }
+
+        private void ShowCsatModal()
+        {
+            if (_latestCsat == null) return;
+            using var modal = new CustomerHappinessDetailModal(_latestCsat);
+            modal.ShowDialog(FindForm());
+        }
+    }
+}
+
+
+===== FILE: CRM_Morcaffein/Views/Controls/AdminDashboardView.cs =====
+using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Controllers;
+using CRM_Morcaffein.Theme;
+
+namespace CRM_Morcaffein.winforms.Views.Controls
+{
+    /// <summary>
+    /// Branch Admin's Bento Grid Dashboard View.
+    /// Clean 1 - 2 - 2 - 1 lineup with spacious heatmap and governance logs.
+    /// </summary>
+    public class AdminDashboardView : UserControl
+    {
+        private readonly DashboardController _controller;
+
+        private DashboardDateRangeFilterControl _dateFilter = null!;
+
+        // KPI Pods (3 Equal Columns across Top Strip)
+        private KpiSummaryPodControl _revenuePod = null!;
+        private KpiSummaryPodControl _ltvPod     = null!;
+        private KpiSummaryPodControl _csatPod    = null!;
+
+        // Charts (1 - 2 - 2 - 1 Lineup)
+        private PeakHoursHeatmapControl       _peakHoursCard    = null!; // Row 1 (1 chart - full width)
+        private AgeDemographicsControl        _demographicsCard = null!; // Row 2 Left
+        private LoyaltyTierProgressionControl _loyaltyTierCard  = null!; // Row 2 Right
+        private CampaignRoiControl            _campaignRoiCard  = null!; // Row 3 Left
+        private ActiveCampaignLiftControl     _campaignLiftCard = null!; // Row 3 Right
+        private AuditLogSummaryControl        _auditSummaryCard = null!; // Row 4 (1 full-width card strip)
+
+        // Cached DTOs for KPI modals
+        private PosDiagnosticsDto?             _latestPos;
+        private CustomerLtvChurnDto?           _latestLtv;
+        private FeedbackRatingDistributionDto? _latestCsat;
+
+        private Panel            _contentHost    = null!;
+        private TableLayoutPanel _bentoContainer = null!;
+
+        public AdminDashboardView()
+        {
+            _controller = new DashboardController();
+            MinimumSize = new Size(600, 400);
+
+            SuspendLayout();
+            BuildBentoLayout();
+            ResumeLayout(false);
+
+            Load += async (s, e) => { SyncWidth(); await ReloadAsync(); };
+        }
+
+        private void BuildBentoLayout()
+        {
+            Dock      = DockStyle.Fill;
+            BackColor = BrandPalette.SurfaceSecondary;
+
+            // ---- Header ----
+            var header = new Panel
+            {
+                Dock      = DockStyle.Top,
+                Height    = 52,
+                BackColor = BrandPalette.SurfacePrimary,
+                Padding   = new Padding(20, 0, 20, 0),
+            };
+
+            var title = new Label
+            {
+                Text      = "Branch Admin Dashboard",
+                Dock      = DockStyle.Left,
+                AutoSize  = true,
+                Font      = BrandPalette.BrandFontBold(13f),
+                ForeColor = BrandPalette.NeutralText,
+                TextAlign = ContentAlignment.MiddleLeft,
+            };
+
+            _dateFilter = new DashboardDateRangeFilterControl { Dock = DockStyle.Right };
+            _dateFilter.RangeChanged += async (s, e) => await ReloadAsync();
+
+            var hDiv = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = BrandPalette.Border };
+
+            header.Controls.Add(_dateFilter);
+            header.Controls.Add(title);
+            header.Controls.Add(hDiv);
+
+            // ---- Content Host ----
+            _contentHost = new Panel
+            {
+                Dock       = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor  = BrandPalette.SurfaceSecondary,
+                Padding    = new Padding(16, 12, 16, 16),
+            };
+
+            _bentoContainer = new TableLayoutPanel
+            {
+                Location        = new Point(16, 12),
+                Width           = 900,
+                ColumnCount     = 1,
+                RowCount        = 5,
+                AutoSize        = true,
+                AutoSizeMode    = AutoSizeMode.GrowAndShrink,
+                BackColor       = Color.Transparent,
+                CellBorderStyle = TableLayoutPanelCellBorderStyle.None,
+            };
+            _bentoContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            // ---- Top Strip: KPI Pods (3 Equal Columns) ----
+            var kpiRow = MakeBentoRow(3, 84, bottomGap: 10);
+            _revenuePod = new KpiSummaryPodControl("Total Revenue",        "₱0")    { Dock = DockStyle.Fill, Margin = new Padding(3) };
+            _ltvPod     = new KpiSummaryPodControl("Member Lifetime Value", "₱0.00") { Dock = DockStyle.Fill, Margin = new Padding(3) };
+            _csatPod    = new KpiSummaryPodControl("Customer Happiness",    "—")     { Dock = DockStyle.Fill, Margin = new Padding(3) };
+
+            _revenuePod.CardClicked += (s, e) => ShowRevenueModal();
+            _ltvPod.CardClicked     += (s, e) => ShowLtvModal();
+            _csatPod.CardClicked    += (s, e) => ShowCsatModal();
+
+            kpiRow.Controls.Add(_revenuePod, 0, 0);
+            kpiRow.Controls.Add(_ltvPod,     1, 0);
+            kpiRow.Controls.Add(_csatPod,    2, 0);
+
+            // ---- Row 1 (1 chart): Peak Hours Velocity (Large, Full Width) ----
+            var peakRow = MakeBentoRow(1, 245, bottomGap: 10);
+            _peakHoursCard = new PeakHoursHeatmapControl
+            {
+                Dock        = DockStyle.Fill,
+                Margin      = new Padding(3),
+                MinimumSize = new Size(100, 100)
+            };
+            peakRow.Controls.Add(_peakHoursCard, 0, 0);
+
+            // ---- Row 2 (2 charts): Demographics (50%) + Loyalty (50%) ----
+            var row2 = MakeBentoRow(2, 255, bottomGap: 10);
+            custRowStyles(row2, 50f, 50f);
+            _demographicsCard = new AgeDemographicsControl        { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            _loyaltyTierCard  = new LoyaltyTierProgressionControl { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            row2.Controls.Add(_demographicsCard, 0, 0);
+            row2.Controls.Add(_loyaltyTierCard,  1, 0);
+
+            // ---- Row 3 (2 charts): Campaign ROI (50%) + Campaign Lift (50%) ----
+            var row3 = MakeBentoRow(2, 255, bottomGap: 10);
+            custRowStyles(row3, 50f, 50f);
+            _campaignRoiCard  = new CampaignRoiControl       { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            _campaignLiftCard = new ActiveCampaignLiftControl { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            row3.Controls.Add(_campaignRoiCard,  0, 0);
+            row3.Controls.Add(_campaignLiftCard, 1, 0);
+
+            // ---- Row 4 (1 card strip): Staff Overrides & Audit Logs (Full Width) ----
+            var row4 = MakeBentoRow(1, 150, bottomGap: 4);
+            _auditSummaryCard = new AuditLogSummaryControl { Dock = DockStyle.Fill, Margin = new Padding(3), MinimumSize = new Size(100, 100) };
+            row4.Controls.Add(_auditSummaryCard, 0, 0);
+
+            // Assemble 1 - 2 - 2 - 1 lineup
+            _bentoContainer.Controls.Add(kpiRow,  0, 0);
+            _bentoContainer.Controls.Add(peakRow, 0, 1);
+            _bentoContainer.Controls.Add(row2,    0, 2);
+            _bentoContainer.Controls.Add(row3,    0, 3);
+            _bentoContainer.Controls.Add(row4,    0, 4);
+
+            _contentHost.Controls.Add(_bentoContainer);
+            _contentHost.Resize += (s, e) => SyncWidth();
+
+            Controls.Add(_contentHost);
+            Controls.Add(header);
+        }
+
+        private static void custRowStyles(TableLayoutPanel row, float col1, float col2)
+        {
+            row.ColumnStyles.Clear();
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, col1));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, col2));
+        }
+
+        private static TableLayoutPanel MakeBentoRow(int columns, int height, int bottomGap)
+        {
+            var row = new TableLayoutPanel
+            {
+                Dock        = DockStyle.Top,
+                Height      = height,
+                ColumnCount = columns,
+                RowCount    = 1,
+                Margin      = new Padding(0, 0, 0, bottomGap),
+                BackColor   = Color.Transparent,
+            };
+            for (int i = 0; i < columns; i++)
+                row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
+            return row;
+        }
+
+        private void SyncWidth()
+        {
+            if (_contentHost == null || _bentoContainer == null) return;
+            var w = Math.Max(700,
+                _contentHost.ClientSize.Width
+                - _contentHost.Padding.Horizontal
+                - SystemInformation.VerticalScrollBarWidth);
+            _bentoContainer.Width = w;
+            foreach (Control row in _bentoContainer.Controls)
+                row.Width = w;
+        }
+
+        private async Task ReloadAsync()
+        {
+            try
+            {
+                var days = _dateFilter.SelectedPreset switch
+                {
+                    DateRangePreset.Today     => 1,
+                    DateRangePreset.SevenDays => 7,
+                    _                         => 30,
+                };
+
+                var months = Math.Max(1, days / 30);
+                if (days <= 7) months = 1;
+
+                // 1. Static Velocity Heatmap
+                _peakHoursCard.BindData(await _controller.GetPeakHoursAsync());
+
+                // 2. Date-filtered metrics
+                _latestPos = await _controller.GetPosDiagnosticsAsync(days);
+                _revenuePod.UpdateData($"₱{_latestPos.NetSales:N0}");
+
+                _latestLtv = await _controller.GetCustomerLtvChurnAsync(days);
+                _ltvPod.UpdateData($"₱{_latestLtv.OverallAverageLtv:N2}");
+
+                var audit = await _controller.GetAuditSummaryAsync(days);
+                _auditSummaryCard.BindData(audit);
+
+                _latestCsat = await _controller.GetFeedbackRatingsAsync(days);
+                _csatPod.UpdateData(_latestCsat.TotalFeedbacks > 0 ? $"{_latestCsat.AverageRating:0.0} ★" : "—");
+
+                _demographicsCard.BindData(await _controller.GetAgeDemographicsAsync(days));
+                _loyaltyTierCard.BindData(await _controller.GetLoyaltyTierProgressionAsync(months));
+                _campaignLiftCard.BindData(await _controller.GetCampaignLiftAsync(days));
+                _campaignRoiCard.BindData(await _controller.GetCampaignRoiAsync(days));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(FindForm(), ex.Message, "Dashboard error");
+            }
+        }
+
+        private void ShowRevenueModal()
+        {
+            if (_latestPos == null) return;
+            using var modal = new RevenueDetailModal(_latestPos);
+            modal.ShowDialog(FindForm());
+        }
+
+        private void ShowLtvModal()
+        {
+            if (_latestLtv == null) return;
+            using var modal = new CustomerLtvDetailModal(_latestLtv);
+            modal.ShowDialog(FindForm());
+        }
+
+        private void ShowCsatModal()
+        {
+            if (_latestCsat == null) return;
+            using var modal = new CustomerHappinessDetailModal(_latestCsat);
+            modal.ShowDialog(FindForm());
+        }
+    }
+}
+
+
