@@ -6,6 +6,8 @@
         public int CreatedBy { get; set; }
         public bool HasPwdSeniorDiscount { get; set; }
         public int? CampaignId { get; set; }
+
+        public int BranchId { get; set; }
         public List<OrderLineDto> Lines { get; set; } = new();
     }
 

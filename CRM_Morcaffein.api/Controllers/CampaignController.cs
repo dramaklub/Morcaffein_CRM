@@ -1,4 +1,5 @@
-﻿using CRM_Morcaffein.api.DTOs;
+﻿using Bogus;
+using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.domain.entities;
 using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
@@ -38,6 +39,7 @@ namespace CRM_Morcaffein.api.Controllers
                     CampaignId = c.CampaignId,
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
+                    Reason = c.Reason,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -79,6 +81,7 @@ namespace CRM_Morcaffein.api.Controllers
                     CampaignId = c.CampaignId,
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
+                    Reason = c.Reason,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -127,6 +130,7 @@ namespace CRM_Morcaffein.api.Controllers
                     CampaignId = c.CampaignId,
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
+                    Reason = c.Reason,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -164,11 +168,11 @@ namespace CRM_Morcaffein.api.Controllers
             CreateCampaignRequest request)
         {
             var validationError = ValidateCampaignRequest(
-                request.PromoName, request.PromoCategory, request.DiscountType,
-                request.DiscountValue, request.TargetTier,
-                request.MinPurchaseAmount, request.MaxDiscountAmount,
-                request.MaxRedemptionsPerCustomer, request.StartDate, request.EndDate,
-                request.RequiredProductId, request.RewardProductId);
+              request.PromoName, request.PromoCategory, request.Reason, request.DiscountType,
+              request.DiscountValue, request.TargetTier,
+              request.MinPurchaseAmount, request.MaxDiscountAmount,
+              request.MaxRedemptionsPerCustomer, request.StartDate, request.EndDate,
+              request.RequiredProductId, request.RewardProductId);
 
             if (validationError is not null)
                 return BadRequest(new { message = validationError });
@@ -192,10 +196,14 @@ namespace CRM_Morcaffein.api.Controllers
                     return BadRequest(new { message = productError });
             }
 
+            if (request.BranchId <= 0)
+                return BadRequest(new { message = "A valid branch is required." });
+
             var campaign = new Campaign
             {
                 PromoName = request.PromoName.Trim(),
                 PromoCategory = request.PromoCategory.Trim(),
+                Reason = request.Reason.Trim(),
                 DiscountType = request.DiscountType,
                 DiscountValue = IsB1T1(request.DiscountType) ? 0m : request.DiscountValue,
                 TargetTier = request.TargetTier,
@@ -207,6 +215,7 @@ namespace CRM_Morcaffein.api.Controllers
                 RequiredProductId = IsB1T1(request.DiscountType) ? request.RequiredProductId : null,
                 RewardProductId = IsB1T1(request.DiscountType) ? request.RewardProductId : null,
                 MadeBy = request.MadeBy,
+                BranchId = request.BranchId,
                 Status = "Pending",
                 IsActive = false,
                 CreatedAt = DateTime.UtcNow,
@@ -240,7 +249,7 @@ namespace CRM_Morcaffein.api.Controllers
             UpdateCampaignRequest request)
         {
             var validationError = ValidateCampaignRequest(
-                request.PromoName, request.PromoCategory, request.DiscountType,
+                request.PromoName, request.PromoCategory, request.Reason, request.DiscountType,
                 request.DiscountValue, request.TargetTier,
                 request.MinPurchaseAmount, request.MaxDiscountAmount,
                 request.MaxRedemptionsPerCustomer, request.StartDate, request.EndDate,
@@ -272,9 +281,14 @@ namespace CRM_Morcaffein.api.Controllers
             if (campaign is null)
                 return NotFound();
 
+            if (request.BranchId <= 0)
+                return BadRequest(new { message = "A valid branch is required." });
+
             campaign.PromoName = request.PromoName.Trim();
             campaign.PromoCategory = request.PromoCategory.Trim();
+            campaign.Reason = request.Reason.Trim();
             campaign.DiscountType = request.DiscountType;
+            campaign.BranchId = request.BranchId;
             campaign.DiscountValue = IsB1T1(request.DiscountType) ? 0m : request.DiscountValue;
             campaign.TargetTier = request.TargetTier;
             campaign.MinPurchaseAmount = request.MinPurchaseAmount;
@@ -429,6 +443,7 @@ namespace CRM_Morcaffein.api.Controllers
                     CampaignId = c.CampaignId,
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
+                    Reason = c.Reason,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -588,16 +603,20 @@ namespace CRM_Morcaffein.api.Controllers
             discountType.Equals("B1T1", StringComparison.OrdinalIgnoreCase);
 
         private static string? ValidateCampaignRequest(
-            string promoName, string promoCategory, string discountType,
-            decimal discountValue, string targetTier,
-            decimal? minPurchase, decimal? maxDiscount,
-            int maxRedemptions, DateTime startDate, DateTime endDate,
-            int? requiredProductId, int? rewardProductId)
+    string promoName, string promoCategory, string reason, string discountType,
+    decimal discountValue, string targetTier,
+    decimal? minPurchase, decimal? maxDiscount,
+    int maxRedemptions, DateTime startDate, DateTime endDate,
+    int? requiredProductId, int? rewardProductId)
         {
             if (string.IsNullOrWhiteSpace(promoName))
                 return "Promo name is required.";
             if (string.IsNullOrWhiteSpace(promoCategory))
                 return "Promo category is required.";
+            if (string.IsNullOrWhiteSpace(reason))
+                return "A reason for this campaign is required.";
+            if (reason.Length > 250)
+                return "Reason cannot exceed 250 characters.";
             if (string.IsNullOrWhiteSpace(discountType))
                 return "Discount type is required.";
 
@@ -640,6 +659,7 @@ namespace CRM_Morcaffein.api.Controllers
             CampaignId = c.CampaignId,
             PromoName = c.PromoName,
             PromoCategory = c.PromoCategory,
+            Reason = c.Reason,
             DiscountType = c.DiscountType,
             DiscountValue = c.DiscountValue,
             TargetTier = c.TargetTier,

@@ -148,6 +148,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Color = BrandPalette.Brand,
                 BorderWidth = 0,
                 IsValueShownAsLabel = false,
+                IsXValueIndexed = true,   // ← treat each point as a discrete category
             };
             seriesReturning["PointWidth"] = "0.5";
 
@@ -160,13 +161,19 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Color = BrandPalette.Tint50,
                 BorderWidth = 0,
                 IsValueShownAsLabel = false,
+                IsXValueIndexed = true,   // ← same
             };
             seriesNew["PointWidth"] = "0.5";
 
-            foreach (var bucket in data.Buckets)
+            for (int i = 0; i < data.Buckets.Count; i++)
             {
-                seriesReturning.Points.AddXY(bucket.MonthLabel, bucket.ReturningCustomerCount);
-                seriesNew.Points.AddXY(bucket.MonthLabel, bucket.NewCustomerCount);
+                var bucket = data.Buckets[i];
+
+                var rIdx = seriesReturning.Points.AddY(bucket.ReturningCustomerCount);
+                seriesReturning.Points[rIdx].AxisLabel = bucket.MonthLabel;
+
+                var nIdx = seriesNew.Points.AddY(bucket.NewCustomerCount);
+                seriesNew.Points[nIdx].AxisLabel = bucket.MonthLabel;
             }
 
             // Tooltips

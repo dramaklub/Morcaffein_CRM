@@ -16,6 +16,8 @@ public class Order : BaseEntity
     public string Status { get; set; } = "Pending";
     public bool HasPwdSeniorDiscount { get; set; }
     public decimal PwdSeniorDiscountAmount { get; set; }
+    public int BranchId { get; set; }
+    public virtual Branch? Branch { get; set; }
 
     public virtual Customer? Customer { get; set; }
     public virtual Employee? Employee { get; set; }

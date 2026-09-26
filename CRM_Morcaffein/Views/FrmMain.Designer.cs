@@ -25,6 +25,9 @@ namespace CRM_Morcaffein.winforms.Views
         private Panel brandMarkPanel;
         private Label topBarBrandLabel;
         private Label topBarTabLabel;
+        private Panel branchSelectorPanel;
+        private Label branchSelectorLabel;
+        private ComboBox branchSelectorCombo;
 
         private void InitializeComponent()
         {
@@ -40,6 +43,9 @@ namespace CRM_Morcaffein.winforms.Views
             brandMarkPanel = new Panel();
             topBarBrandLabel = new Label();
             topBarTabLabel = new Label();
+            branchSelectorPanel = new Panel();
+            branchSelectorLabel = new Label();
+            branchSelectorCombo = new ComboBox();
             SuspendLayout();
 
             // sidebarPanel — right-docked, deliberately lighter than the rest of the UI.
@@ -120,6 +126,31 @@ namespace CRM_Morcaffein.winforms.Views
             topBarTabLabel.Location = new Point(180, 22);
             topBarTabLabel.Text = "/";
 
+            // ---- Branch selector (right side of topbar) ----
+            // A right-docked panel containing "Branch:" + a dropdown. Populated in
+            // FrmMain.cs from the /branches endpoint after login. Baristas never see
+            // this — the panel is hidden if the user's role doesn't allow branch switching.
+            branchSelectorPanel.Dock = DockStyle.Right;
+            branchSelectorPanel.Width = 240;
+            branchSelectorPanel.BackColor = Color.Transparent;
+            branchSelectorPanel.Padding = new Padding(0, 14, 22, 14);
+            branchSelectorPanel.Location = new Point(320, 0);
+
+            branchSelectorLabel.Text = "Branch:";
+            branchSelectorLabel.AutoSize = true;
+            branchSelectorLabel.Font = BrandPalette.BrandFontRegular(9f);
+            branchSelectorLabel.ForeColor = BrandPalette.NeutralTextMuted;
+            branchSelectorLabel.Location = new Point(0, 22);
+
+            branchSelectorCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+            branchSelectorCombo.Font = BrandPalette.BrandFontRegular(9.5f);
+            branchSelectorCombo.Width = 170;
+            branchSelectorCombo.Location = new Point(56, 18);
+
+            branchSelectorPanel.Controls.Add(branchSelectorCombo);
+            branchSelectorPanel.Controls.Add(branchSelectorLabel);
+
+            topBarPanel.Controls.Add(branchSelectorPanel);
             topBarPanel.Controls.Add(topBarTabLabel);
             topBarPanel.Controls.Add(topBarBrandLabel);
             topBarPanel.Controls.Add(brandMarkPanel);

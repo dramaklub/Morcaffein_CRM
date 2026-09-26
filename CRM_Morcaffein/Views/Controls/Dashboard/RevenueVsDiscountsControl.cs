@@ -157,7 +157,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 IsXValueIndexed = true,
             };
 
-            // ── Line 2: Campaign Discounts ──
+            // ── Line 2: Campaign Discounts (secondary axis) ──
             var seriesCampaign = new Series("Campaign Discounts")
             {
                 ChartType = SeriesChartType.Line,
@@ -171,9 +171,10 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 MarkerBorderColor = BrandPalette.SurfacePrimary,
                 MarkerBorderWidth = 2,
                 IsXValueIndexed = true,
+                YAxisType = AxisType.Secondary,
             };
 
-            // ── Line 3: PWD/Senior Discounts ──
+            // ── Line 3: PWD/Senior Discounts (secondary axis) ──
             var seriesPwd = new Series("PWD/Senior")
             {
                 ChartType = SeriesChartType.Line,
@@ -187,6 +188,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 MarkerBorderColor = BrandPalette.SurfacePrimary,
                 MarkerBorderWidth = 2,
                 IsXValueIndexed = true,
+                YAxisType = AxisType.Secondary,
             };
 
             foreach (var bucket in data.Buckets)

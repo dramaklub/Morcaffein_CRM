@@ -123,15 +123,34 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             area.AxisX.LabelStyle.Font         = BrandPalette.BrandFontBold(9.5f);
             area.AxisX.LabelStyle.ForeColor    = BrandPalette.NeutralText;
 
-            // Value axis (Review count)
-            area.AxisY.MajorGrid.LineColor     = BrandPalette.Border;
+            // ── Primary Y axis (left) — Net Revenue, whole pesos ──
+            area.AxisY.MajorGrid.LineColor = BrandPalette.Border;
             area.AxisY.MajorGrid.LineDashStyle = ChartDashStyle.Dot;
-            area.AxisY.MajorTickMark.Enabled   = false;
-            area.AxisY.LineColor               = Color.Transparent;
-            area.AxisY.LabelStyle.Font         = BrandPalette.BrandFontRegular(8f);
-            area.AxisY.LabelStyle.ForeColor    = BrandPalette.NeutralTextMuted;
-            area.AxisY.Minimum                 = 0;
-            area.AxisY.IsStartedFromZero       = true;
+            area.AxisY.MajorTickMark.Enabled = false;
+            area.AxisY.LineColor = Color.Transparent;
+            area.AxisY.LabelStyle.Font = BrandPalette.BrandFontRegular(8f);
+            area.AxisY.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY.LabelStyle.Format = "₱#,##0";
+            area.AxisY.Minimum = 0;
+            area.AxisY.IsStartedFromZero = true;
+            area.AxisY.Title = "Net Revenue (₱)";
+            area.AxisY.TitleFont = BrandPalette.BrandFontBold(8f);
+            area.AxisY.TitleForeColor = BrandPalette.NeutralTextMuted;
+
+            // ── Secondary Y axis (right) — discounts, own scale ──
+            // Without this, discount amounts (typically 5–20% of revenue) hug the
+            // ₱0 line and read as "no discounts at all" even when they're real.
+            area.AxisY2.MajorGrid.Enabled = false;
+            area.AxisY2.MajorTickMark.Enabled = false;
+            area.AxisY2.LineColor = Color.Transparent;
+            area.AxisY2.LabelStyle.Font = BrandPalette.BrandFontRegular(8f);
+            area.AxisY2.LabelStyle.ForeColor = BrandPalette.NeutralTextMuted;
+            area.AxisY2.LabelStyle.Format = "₱#,##0";
+            area.AxisY2.Minimum = 0;
+            area.AxisY2.IsStartedFromZero = true;
+            area.AxisY2.Title = "Discounts (₱)";
+            area.AxisY2.TitleFont = BrandPalette.BrandFontBold(8f);
+            area.AxisY2.TitleForeColor = BrandPalette.NeutralTextMuted;
 
             var maxCount = data.RatingBreakdown.Count > 0 ? data.RatingBreakdown.Max(r => r.Count) : 0;
             area.AxisY.Maximum = Math.Max(5, maxCount + (maxCount > 0 ? (int)Math.Ceiling(maxCount * 0.25) : 2));

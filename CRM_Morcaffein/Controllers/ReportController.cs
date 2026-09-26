@@ -40,5 +40,13 @@ namespace CRM_Morcaffein.Controllers
             var doc = ReportBuilder.BuildAdmin(days, pos, ltv, revDisc, newRet, peak, audit);
             return MigraDocRenderer.Render(doc);
         }
+
+        public async Task<byte[]> GenerateTransactionLedgerAsync(int days)
+        {
+            var ledger = await _dash.GetTransactionLedgerAsync(days);
+
+            var doc = ReportBuilder.BuildTransactionLedger(days, ledger);
+            return MigraDocRenderer.Render(doc);
+        }
     }
 }

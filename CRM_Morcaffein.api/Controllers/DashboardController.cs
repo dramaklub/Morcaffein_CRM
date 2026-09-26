@@ -3,6 +3,7 @@ using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using CRM_Morcaffein.domain.entities;
 
 namespace CRM_Morcaffein.api.Controllers
 {
@@ -119,8 +120,9 @@ namespace CRM_Morcaffein.api.Controllers
 
         [HttpGet("age-demographics")]
         public async Task<ActionResult<AgeDemographicsAovDto>> GetAgeDemographics(
-            int companyId,
-            [FromQuery] int days = 30)
+             int companyId,
+             [FromQuery] int days = 30,
+             [FromQuery] int? branchId = null)
         {
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -129,6 +131,9 @@ namespace CRM_Morcaffein.api.Controllers
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
+            // The customer set stays company-wide — flipping branches shouldn't
+            // change who's in each age bracket. Only the spend figures scope to
+            // the branch, since that's what varies by location.
             var customers = await tenant.Customers
                 .AsNoTracking()
                 .Where(c => c.IsActive)
@@ -136,8 +141,15 @@ namespace CRM_Morcaffein.api.Controllers
                 {
                     c.CustomerId,
                     c.Birthday,
-                    TotalSpend = c.Orders.Where(o => o.Status == "Completed" && o.OrderDate >= startDate).Sum(o => (decimal?)o.TotalAmount) ?? 0m,
-                    OrderCount = c.Orders.Count(o => o.Status == "Completed" && o.OrderDate >= startDate)
+                    TotalSpend = c.Orders
+                        .Where(o => o.Status == "Completed"
+                                 && o.OrderDate >= startDate
+                                 && (!branchId.HasValue || o.BranchId == branchId.Value))
+                        .Sum(o => (decimal?)o.TotalAmount) ?? 0m,
+                    OrderCount = c.Orders
+                        .Count(o => o.Status == "Completed"
+                                 && o.OrderDate >= startDate
+                                 && (!branchId.HasValue || o.BranchId == branchId.Value))
                 })
                 .ToListAsync();
 
@@ -204,7 +216,8 @@ namespace CRM_Morcaffein.api.Controllers
         [HttpGet("campaign-lift")]
         public async Task<ActionResult<ActiveCampaignLiftDto>> GetCampaignLift(
             int companyId,
-            [FromQuery] int days = 14)
+            [FromQuery] int days = 14,
+            [FromQuery] int? branchId = null)
         {
             if (days < 1) days = 1;
             if (days > 90) days = 90;
@@ -213,15 +226,19 @@ namespace CRM_Morcaffein.api.Controllers
 
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
-            var orders = await tenant.Orders
-                .AsNoTracking()
-                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+            var orders = await ScopeOrdersToBranch(
+                    tenant.Orders.AsNoTracking().Where(o => o.Status == "Completed" && o.OrderDate >= startDate),
+                    branchId)
                 .Select(o => new { Date = o.OrderDate.Date, o.TotalAmount })
                 .ToListAsync();
 
+            // CampaignRedeems don't have their own BranchId — they inherit the branch
+            // of their parent Order. Filtering them by joining to Order.BranchId keeps
+            // the "which branch's redemptions" question correct.
             var redemptions = await tenant.CampaignRedeems
                 .AsNoTracking()
-                .Where(cr => cr.RedeemDate >= startDate)
+                .Where(cr => cr.RedeemDate >= startDate
+                          && (!branchId.HasValue || (cr.Order != null && cr.Order.BranchId == branchId.Value)))
                 .Select(cr => cr.RedeemDate.Date)
                 .ToListAsync();
 
@@ -251,8 +268,9 @@ namespace CRM_Morcaffein.api.Controllers
 
         [HttpGet("feedback-ratings")]
         public async Task<ActionResult<FeedbackRatingDistributionDto>> GetFeedbackRatings(
-            int companyId,
-            [FromQuery] int days = 30)
+             int companyId,
+             [FromQuery] int days = 30,
+             [FromQuery] int? branchId = null)
         {
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -261,19 +279,34 @@ namespace CRM_Morcaffein.api.Controllers
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
-            var feedbacks = await tenant.Feedbacks
+            var feedbackRows = await tenant.Feedbacks
                 .AsNoTracking()
-                .Where(f => f.IsActive && f.DateLogged >= startDate)
-                .Select(f => f.Rating)
+                .Where(f => f.IsActive
+                         && f.DateLogged >= startDate
+                         && (!branchId.HasValue || f.BranchId == branchId.Value))
+                .Select(f => new { f.Rating, f.Status })
                 .ToListAsync();
 
+            var feedbacks = feedbackRows.Select(f => f.Rating).ToList();
             var total = feedbacks.Count;
             var avg = total > 0 ? feedbacks.Average() : 0.0;
+
+            // Pending count is a lifetime figure, not scoped to the date range —
+            // a ticket logged three months ago and still unresolved is *more*
+            // urgent than one logged yesterday. Deliberately not filtered by
+            // `startDate`.
+            var pendingCount = await tenant.Feedbacks
+                .AsNoTracking()
+                .Where(f => f.IsActive
+                         && f.Status == "Pending"
+                         && (!branchId.HasValue || f.BranchId == branchId.Value))
+                .CountAsync();
 
             var result = new FeedbackRatingDistributionDto
             {
                 AverageRating = Math.Round(avg, 1),
-                TotalFeedbacks = total
+                TotalFeedbacks = total,
+                PendingFeedbackCount = pendingCount
             };
 
             for (int rating = 1; rating <= 5; rating++)
@@ -353,7 +386,8 @@ namespace CRM_Morcaffein.api.Controllers
         [HttpGet("pos-diagnostics")]
         public async Task<ActionResult<PosDiagnosticsDto>> GetPosDiagnostics(
             int companyId,
-            [FromQuery] int days = 30)
+            [FromQuery] int days = 30,
+            [FromQuery] int? branchId = null)
         {
             if (!CallerIsManagerOrAdmin())
                 return StatusCode(403, new { message = "Only managers and admins can view POS diagnostics." });
@@ -365,9 +399,9 @@ namespace CRM_Morcaffein.api.Controllers
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
-            var completedOrders = await tenant.Orders
-                .AsNoTracking()
-                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+            var completedOrders = await ScopeOrdersToBranch(
+                    tenant.Orders.AsNoTracking().Where(o => o.Status == "Completed" && o.OrderDate >= startDate),
+                    branchId)
                 .ToListAsync();
 
             var gross = completedOrders.Sum(o => o.SubTotal);
@@ -538,13 +572,18 @@ namespace CRM_Morcaffein.api.Controllers
                 .Where(c => c.Status == "Pending")
                 .CountAsync();
 
+            var activeEmployeeCount = await tenant.Employees
+                .AsNoTracking()
+                .CountAsync(e => e.IsActive);
+
             return Ok(new AuditLogSummaryDto
             {
                 TotalManualPointAdjustments = totalAdjustments,
                 ApprovedPointAdjustments = approvedAdjustments,
                 RejectedPointAdjustments = rejectedAdjustments,
                 FeedbackBonusPointsAwarded = feedbackBonusCount,
-                PendingCampaignApprovals = pendingCampaigns
+                PendingCampaignApprovals = pendingCampaigns,
+                ActiveEmployeeCount = activeEmployeeCount
             });
         }
 
@@ -552,9 +591,10 @@ namespace CRM_Morcaffein.api.Controllers
 
         [HttpGet("recent-orders")]
         public async Task<ActionResult<List<RecentOrderSummaryDto>>> GetRecentOrders(
-            int companyId,
-            [FromQuery] int days = 30,
-            [FromQuery] int limit = 10)
+             int companyId,
+             [FromQuery] int days = 30,
+             [FromQuery] int limit = 10,
+             [FromQuery] int? branchId = null)
         {
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -565,11 +605,13 @@ namespace CRM_Morcaffein.api.Controllers
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
-            var orders = await tenant.Orders
-                .AsNoTracking()
-                .Include(o => o.Customer)
-                .Include(o => o.OrderItems)
-                .Where(o => o.Status == "Completed" && o.OrderDate >= startDate)
+            var orders = await ScopeOrdersToBranch(
+                    tenant.Orders
+                        .AsNoTracking()
+                        .Include(o => o.Customer)
+                        .Include(o => o.OrderItems)
+                        .Where(o => o.Status == "Completed" && o.OrderDate >= startDate),
+                    branchId)
                 .OrderByDescending(o => o.OrderDate)
                 .Take(limit)
                 .Select(o => new RecentOrderSummaryDto
@@ -835,7 +877,8 @@ namespace CRM_Morcaffein.api.Controllers
         public async Task<ActionResult<TopProductsResponseDto>> GetTopProducts(
             int companyId,
             [FromQuery] int days = 30,
-            [FromQuery] int limit = 5)
+            [FromQuery] int limit = 5,
+            [FromQuery] int? branchId = null)
         {
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -846,17 +889,12 @@ namespace CRM_Morcaffein.api.Controllers
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
-            // Group OrderItem rows by their ProductId, then join product metadata.
-            // Restrict to completed orders inside the window.
-            // Pull raw OrderItem rows for the window, then group in memory —
-            // OrderItem.SubTotal is Ignore()'d in the DbContext (computed property,
-            // not a stored column), so EF can't translate `g.Sum(x => x.SubTotal)`
-            // to SQL. Fetch first, aggregate second.
             var rawRows = await tenant.OrderItems
                 .AsNoTracking()
                 .Where(oi => oi.Order != null
                           && oi.Order.Status == "Completed"
-                          && oi.Order.OrderDate >= startDate)
+                          && oi.Order.OrderDate >= startDate
+                          && (!branchId.HasValue || oi.Order.BranchId == branchId.Value))
                 .Select(oi => new
                 {
                     oi.ProductId,
@@ -907,6 +945,203 @@ namespace CRM_Morcaffein.api.Controllers
 
             return Ok(result);
         }
+        // GET api/tenant/{companyId}/dashboard/visit-frequency
+        //
+        // Groups all customers who have ever placed a completed order by how many
+        // completed orders they have placed, into 5 buckets. Tells the Admin what
+        // kind of business this is — one-time-visit heavy (weak retention) or
+        // regular-heavy (strong retention).
+        //
+        // Not date-filtered: this is a lifetime-shape metric, not a period metric.
+        // "How many times have our members visited us, ever" is the question.
+        [HttpGet("visit-frequency")]
+        public async Task<ActionResult<VisitFrequencyDto>> GetVisitFrequency(int companyId)
+        {
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            // Group completed orders by customer, count per customer.
+            var counts = await tenant.Orders
+                .AsNoTracking()
+                .Where(o => o.Status == "Completed")
+                .GroupBy(o => o.CustomerId)
+                .Select(g => new { CustomerId = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            int b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0;
+
+            foreach (var c in counts)
+            {
+                switch (c.Count)
+                {
+                    case 1: b1++; break;
+                    case <= 3: b2++; break;
+                    case <= 7: b3++; break;
+                    case <= 15: b4++; break;
+                    default: b5++; break;
+                }
+            }
+
+            var result = new VisitFrequencyDto
+            {
+                TotalCustomers = counts.Count,
+                Buckets =
+                {
+                    new VisitFrequencyBucket { Label = "1 visit",     CustomerCount = b1 },
+                    new VisitFrequencyBucket { Label = "2–3 visits",  CustomerCount = b2 },
+                    new VisitFrequencyBucket { Label = "4–7 visits",  CustomerCount = b3 },
+                    new VisitFrequencyBucket { Label = "8–15 visits", CustomerCount = b4 },
+                    new VisitFrequencyBucket { Label = "16+ visits",  CustomerCount = b5 },
+                }
+            };
+
+            return Ok(result);
+        }
+
+        // GET api/tenant/{companyId}/dashboard/transactions?days=30
+        //
+        // Returns every completed order in the window as a flat ledger — one row
+        // per order with subtotal / discount / PWD / net / points. This is the
+        // raw data behind every other dashboard chart, exposed for the PDF
+        // transaction ledger report.
+        //
+        // Not paginated: the report needs the whole window to compute its own
+        // footer totals. Cap is 1000 rows so the endpoint can't be abused.
+        [HttpGet("transactions")]
+        public async Task<ActionResult<TransactionLedgerDto>> GetTransactions(
+            int companyId,
+            [FromQuery] int days = 30,
+            [FromQuery] int? branchId = null)
+        {
+            if (days < 1) days = 1;
+            if (days > 365) days = 365;
+
+            var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var orders = await ScopeOrdersToBranch(
+                    tenant.Orders
+                        .AsNoTracking()
+                        .Include(o => o.Customer)
+                        .Include(o => o.OrderItems)
+                        .Where(o => o.Status == "Completed" && o.OrderDate >= startDate),
+                    branchId)
+                .OrderByDescending(o => o.OrderDate)
+                .Take(1000)
+                .Select(o => new
+                {
+                    o.OrderId,
+                    o.OrderDate,
+                    CustomerName = o.Customer != null
+                        ? (o.Customer.FirstName + " " + o.Customer.LastName).Trim()
+                        : "Walk-in",
+                    ItemCount = o.OrderItems.Sum(i => i.Quantity),
+                    o.SubTotal,
+                    o.TotalDiscount,
+                    o.PwdSeniorDiscountAmount,
+                    o.TotalAmount,
+                    o.PointsEarned,
+                })
+                .ToListAsync();
+
+            var result = new TransactionLedgerDto
+            {
+                TotalSubTotal = orders.Sum(o => o.SubTotal),
+                TotalDiscount = orders.Sum(o => o.TotalDiscount),
+                TotalPwdSenior = orders.Sum(o => o.PwdSeniorDiscountAmount),
+                TotalNet = orders.Sum(o => o.TotalAmount),
+                TotalPointsEarned = orders.Sum(o => o.PointsEarned),
+            };
+
+            result.Rows = orders.Select(o => new TransactionLedgerRow
+            {
+                OrderId = o.OrderId,
+                OrderDate = o.OrderDate,
+                CustomerName = o.CustomerName,
+                ItemCount = o.ItemCount,
+                SubTotal = o.SubTotal,
+                TotalDiscount = o.TotalDiscount,
+                PwdSeniorDiscount = o.PwdSeniorDiscountAmount,
+                NetAmount = o.TotalAmount,
+                PointsEarned = o.PointsEarned,
+            }).ToList();
+
+            return Ok(result);
+        }
+
+        // GET api/tenant/{companyId}/dashboard/recent-employees
+        //
+        // Last N employees by EmployeeId descending. Only used by the Basic-tier
+        // Admin dashboard's "Recent Employees" card, which shows a mini roster
+        // alongside the Employee count pod. Not branch-scoped — the Admin's
+        // employee roster is company-wide by design.
+        [HttpGet("recent-employees")]
+        public async Task<ActionResult<RecentEmployeesDto>> GetRecentEmployees(
+            int companyId,
+            [FromQuery] int limit = 5)
+        {
+            if (limit < 1) limit = 5;
+            if (limit > 20) limit = 20;
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var employees = await tenant.Employees
+                .AsNoTracking()
+                .Include(e => e.Branch)
+                .OrderByDescending(e => e.EmployeeId)
+                .Take(limit)
+                .Select(e => new RecentEmployeeItem
+                {
+                    EmployeeId = e.EmployeeId,
+                    FullName = (e.FirstName + " " + e.LastName).Trim(),
+                    Role = e.Role,
+                    BranchName = e.Branch != null ? e.Branch.BranchName : null,
+                    IsActive = e.IsActive,
+                    CreatedAt = e.CreatedAt,
+                })
+                .ToListAsync();
+
+            return Ok(new RecentEmployeesDto { Employees = employees });
+        }
+
+        // GET api/tenant/{companyId}/dashboard/recent-feedback
+        //
+        // Last N feedback tickets by DateLogged descending. Only used by the
+        // Basic-tier Admin dashboard's "Recent Feedback" card. Branch-scoped
+        // via the optional branchId, same as the Feedback tab itself.
+        [HttpGet("recent-feedback")]
+        public async Task<ActionResult<RecentFeedbackDto>> GetRecentFeedback(
+            int companyId,
+            [FromQuery] int limit = 5,
+            [FromQuery] int? branchId = null)
+        {
+            if (limit < 1) limit = 5;
+            if (limit > 20) limit = 20;
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var feedbacks = await tenant.Feedbacks
+                .AsNoTracking()
+                .Include(f => f.Customer)
+                .Where(f => f.IsActive
+                         && (!branchId.HasValue || f.BranchId == branchId.Value))
+                .OrderByDescending(f => f.DateLogged)
+                .Take(limit)
+                .Select(f => new RecentFeedbackItem
+                {
+                    TicketId = f.TicketId,
+                    CustomerName = f.Customer != null
+                        ? (f.Customer.FirstName + " " + f.Customer.LastName).Trim()
+                        : "—",
+                    Rating = f.Rating,
+                    Category = f.Category,
+                    Status = f.Status,
+                    DateLogged = f.DateLogged,
+                })
+                .ToListAsync();
+
+            return Ok(new RecentFeedbackDto { Feedbacks = feedbacks });
+        }
 
         // ---- Helpers ----
 
@@ -915,5 +1150,22 @@ namespace CRM_Morcaffein.api.Controllers
 
         private bool CallerIsAdmin() =>
             User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+
+        /// <summary>
+        /// Returns a filtered IQueryable of Orders, scoped to a branch if
+        /// branchId has a value. When branchId is null, returns all orders —
+        /// the "All Branches" case the topbar selector can produce.
+        ///
+        /// This is deliberately on IQueryable so EF can push the filter down
+        /// to SQL rather than materializing rows first.
+        /// </summary>
+        private static IQueryable<CRM_Morcaffein.domain.entities.Order> ScopeOrdersToBranch(
+            IQueryable<CRM_Morcaffein.domain.entities.Order> query,
+            int? branchId)
+        {
+            return branchId.HasValue
+                ? query.Where(o => o.BranchId == branchId.Value)
+                : query;
+        }
     }
 }

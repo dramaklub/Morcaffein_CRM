@@ -1,6 +1,7 @@
 ﻿using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.winforms.Services;
 using CRM_Morcaffein.winforms.Services.Api;
+using CRM_Morcaffein.Session;
 
 namespace CRM_Morcaffein.Controllers
 {
@@ -19,6 +20,23 @@ namespace CRM_Morcaffein.Controllers
         public CampaignController()
         {
             _api = new CampaignApi();
+        }
+
+        /// <summary>
+        /// The branch a newly created/edited campaign belongs to.
+        /// Phase 3 will make Campaign.BranchId nullable and add an explicit
+        /// picker in the campaign modal — at which point this helper goes away.
+        /// For now, campaigns land on the current user's branch (their assigned
+        /// branch if they're pinned, or their topbar selection if they're
+        /// all-branch). Falls back to Branch 1 if neither is set — the DB
+        /// requires a non-null BranchId.
+        /// </summary>
+        private static int ResolveCurrentBranchId()
+        {
+            var session = Session.EmployeeSession.Current;
+            return session?.CurrentBranchId
+                ?? session?.Employee.BranchId
+                ?? 1;
         }
 
         // ---- List ----
@@ -41,17 +59,18 @@ namespace CRM_Morcaffein.Controllers
         // a rejected edit shouldn't reset the cache.
 
         public async Task<CampaignResponseDto> CreateAsync(
-            string promoName, string promoCategory, string discountType,
-            decimal discountValue, string targetTier,
-            decimal? minPurchaseAmount, decimal? maxDiscountAmount,
-            int maxRedemptionsPerCustomer, DateTime startDate, DateTime endDate,
-            int madeByEmployeeId,
-            int? requiredProductId = null, int? rewardProductId = null)
+    string promoName, string promoCategory, string reason, string discountType,
+    decimal discountValue, string targetTier,
+    decimal? minPurchaseAmount, decimal? maxDiscountAmount,
+    int maxRedemptionsPerCustomer, DateTime startDate, DateTime endDate,
+    int madeByEmployeeId,
+    int? requiredProductId = null, int? rewardProductId = null)
         {
             var request = new CreateCampaignRequest
             {
                 PromoName = promoName,
                 PromoCategory = promoCategory,
+                Reason = reason,
                 DiscountType = discountType,
                 DiscountValue = discountValue,
                 TargetTier = targetTier,
@@ -63,6 +82,7 @@ namespace CRM_Morcaffein.Controllers
                 RequiredProductId = requiredProductId,
                 RewardProductId = rewardProductId,
                 MadeBy = madeByEmployeeId,
+                BranchId = ResolveCurrentBranchId(),
             };
 
             var result = await _api.CreateAsync(request);
@@ -72,7 +92,7 @@ namespace CRM_Morcaffein.Controllers
 
         public async Task<CampaignResponseDto> UpdateAsync(
             int campaignId,
-            string promoName, string promoCategory, string discountType,
+            string promoName, string promoCategory, string reason, string discountType,
             decimal discountValue, string targetTier,
             decimal? minPurchaseAmount, decimal? maxDiscountAmount,
             int maxRedemptionsPerCustomer, DateTime startDate, DateTime endDate,
@@ -83,6 +103,7 @@ namespace CRM_Morcaffein.Controllers
             {
                 PromoName = promoName,
                 PromoCategory = promoCategory,
+                Reason = reason,
                 DiscountType = discountType,
                 DiscountValue = discountValue,
                 TargetTier = targetTier,
@@ -94,6 +115,7 @@ namespace CRM_Morcaffein.Controllers
                 RequiredProductId = requiredProductId,
                 RewardProductId = rewardProductId,
                 MadeBy = madeByEmployeeId,
+                BranchId = ResolveCurrentBranchId(),
             };
 
             var result = await _api.UpdateAsync(campaignId, request);

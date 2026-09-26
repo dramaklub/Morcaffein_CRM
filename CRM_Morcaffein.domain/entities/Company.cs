@@ -11,6 +11,8 @@ namespace CRM_Morcaffein.domain.entities
         public string CompanyName { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public int? CurrentPlanId { get; set; }
+        public Plan? CurrentPlan { get; set; }
 
         public ICollection<Device> Devices { get; set; } = new List<Device>();
 

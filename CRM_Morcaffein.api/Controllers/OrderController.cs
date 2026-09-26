@@ -17,11 +17,13 @@ namespace CRM_Morcaffein.api.Controllers
             _tenantFactory = tenantFactory;
         }
 
+
         [HttpPost]
         public async Task<ActionResult<OrderResponseDto>> CompleteOrder(
             int companyId,
             CompleteOrderRequest request)
         {
+
             // ---- Request-level validation ----
             if (request.CustomerId <= 0)
                 return BadRequest(new { message = "Customer is required." });
@@ -73,6 +75,7 @@ namespace CRM_Morcaffein.api.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 HasPwdSeniorDiscount = request.HasPwdSeniorDiscount,
+                BranchId = request.BranchId,
             };
 
             decimal subTotal = 0m;

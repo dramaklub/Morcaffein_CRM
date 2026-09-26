@@ -70,6 +70,16 @@ public class FeedbackRatingDistributionDto
 {
     public double AverageRating { get; set; }
     public int TotalFeedbacks { get; set; }
+
+    /// <summary>
+    /// Count of feedback tickets with Status = "Pending" — the Manager's
+    /// actionable queue. Feeds the "Feedback" KPI pod on the Basic-tier
+    /// Manager dashboard (which shows this count and navigates to the
+    /// Feedback tab on click). Also useful as a general signal on the
+    /// ratings card.
+    /// </summary>
+    public int PendingFeedbackCount { get; set; }
+
     public List<RatingDistributionPoint> RatingBreakdown { get; set; } = new();
 }
 
@@ -155,6 +165,14 @@ public class AuditLogSummaryDto
     public int RejectedPointAdjustments { get; set; }
     public int FeedbackBonusPointsAwarded { get; set; }
     public int PendingCampaignApprovals { get; set; }
+
+    /// <summary>
+    /// Total active (non-deactivated) employees for this tenant. Feeds the
+    /// "Employees" KPI pod on the Basic-tier Admin dashboard. Lives on the
+    /// audit DTO for convenience — the audit endpoint already runs on every
+    /// Admin dashboard load, so there's no extra round trip.
+    /// </summary>
+    public int ActiveEmployeeCount { get; set; }
 }
 
 // ---- Recent Orders (Sales per Order KPI Modal) ----
@@ -227,4 +245,84 @@ public class TopProductItem
 
     /// <summary>Revenue attributable to this product in the period (sum of OrderItem.SubTotal).</summary>
     public decimal Revenue { get; set; }
+}
+
+// ---- Admin Dashboard: Customer Visit Frequency Distribution ----
+
+public class VisitFrequencyDto
+{
+    public List<VisitFrequencyBucket> Buckets { get; set; } = new();
+
+    /// <summary>Total distinct customers who placed at least one order.</summary>
+    public int TotalCustomers { get; set; }
+}
+
+public class VisitFrequencyBucket
+{
+    /// <summary>Display label — "1 visit", "2–3 visits", etc.</summary>
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>Number of distinct customers whose order count falls in this bucket.</summary>
+    public int CustomerCount { get; set; }
+}
+
+// ---- Transactions Ledger (raw row export for the PDF report) ----
+
+public class TransactionLedgerDto
+{
+    public List<TransactionLedgerRow> Rows { get; set; } = new();
+
+    /// <summary>Aggregate figures for the footer row of the report table.</summary>
+    public decimal TotalSubTotal { get; set; }
+    public decimal TotalDiscount { get; set; }
+    public decimal TotalPwdSenior { get; set; }
+    public decimal TotalNet { get; set; }
+    public int TotalPointsEarned { get; set; }
+}
+
+public class TransactionLedgerRow
+{
+    public int OrderId { get; set; }
+    public DateTime OrderDate { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public int ItemCount { get; set; }
+    public decimal SubTotal { get; set; }
+    public decimal TotalDiscount { get; set; }
+    public decimal PwdSeniorDiscount { get; set; }
+    public decimal NetAmount { get; set; }
+    public int PointsEarned { get; set; }
+}
+
+// ---- Basic-tier Admin Dashboard: Recent Employees card ----
+
+public class RecentEmployeesDto
+{
+    public List<RecentEmployeeItem> Employees { get; set; } = new();
+}
+
+public class RecentEmployeeItem
+{
+    public int EmployeeId { get; set; }
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string? BranchName { get; set; }
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+// ---- Basic-tier Admin Dashboard: Recent Feedback card ----
+
+public class RecentFeedbackDto
+{
+    public List<RecentFeedbackItem> Feedbacks { get; set; } = new();
+}
+
+public class RecentFeedbackItem
+{
+    public int TicketId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public int Rating { get; set; }
+    public string Category { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime DateLogged { get; set; }
 }

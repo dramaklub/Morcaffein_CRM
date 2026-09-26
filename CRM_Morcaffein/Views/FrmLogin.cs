@@ -12,6 +12,7 @@ namespace CRM_Morcaffein.winforms.Views
     /// </summary>
     public class FrmLogin : Form
     {
+        private readonly SuperAdminAuthApi _superAdminApi = new();
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -222,42 +223,79 @@ namespace CRM_Morcaffein.winforms.Views
                 _loginBtn.Text = "Signing in...";
                 _errorLabel.Text = string.Empty;
 
+                // Step 1 — try the tenant (regular staff) login first.
                 var authApi = new AuthApi();
                 var result = await authApi.LoginAsync(username, password);
 
-                if (!result.Success)
+                if (result.Success)
                 {
-                    // Every failure becomes a popup. No crash, no pause.
-                    MessageBox.Show(
-                        this,
-                        result.ErrorMessage ?? "Login failed.",
-                        "Sign In",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                    // Tenant login succeeded — regular employee path.
+                    var response = result.Data!;
+                    ApiConfig.AuthToken = response.Token;
+                    ApiConfig.IsSuperAdminSession = false;
 
-                    _passwordTxtBx.Text = string.Empty;
-                    _passwordTxtBx.Focus();
+                    var employee = new Employee
+                    {
+                        EmployeeId = response.EmployeeId,
+                        FirstName = ExtractFirstName(response.FullName),
+                        LastName = ExtractLastName(response.FullName),
+                        Role = response.Role,
+                        BranchId = response.BranchId,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                    };
+                    EmployeeSession.Start(employee);
+
+                    // Fetch entitlements before opening the shell so the nav is
+                    // fully built the first time FrmMain paints. If this fails,
+                    // the session still works — HasModule just returns false
+                    // for everything, and the app behaves like a no-plan tenant.
+                    try
+                    {
+                        var meApi = new MeApi();
+                        EmployeeSession.Current!.Entitlements = await meApi.GetEntitlementsAsync();
+                    }
+                    catch
+                    {
+                        // Silent — failed entitlements fetch shouldn't block login.
+                        // The nav will be empty, which is the correct "no plan" state.
+                    }
+
+                    DialogResult = DialogResult.OK;
+                    Close();
                     return;
                 }
 
-                // Success — store token, seed session, close.
-                var response = result.Data!;
-                ApiConfig.AuthToken = response.Token;
+                // Step 2 — tenant login failed. Try SuperAdmin login.
+                // Same username/password; different endpoint, no tenant context.
+                var superResult = await _superAdminApi.LoginAsync(username, password);
 
-                var employee = new Employee
+                if (superResult.Success)
                 {
-                    EmployeeId = response.EmployeeId,
-                    FirstName = ExtractFirstName(response.FullName),
-                    LastName = ExtractLastName(response.FullName),
-                    Role = response.Role,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                };
-                EmployeeSession.Start(employee);
+                    ApiConfig.AuthToken = superResult.Token;
+                    ApiConfig.IsSuperAdminSession = true;
 
-                DialogResult = DialogResult.OK;
-                Close();
+                    // SuperAdmins aren't employees — no EmployeeSession.Start().
+                    // The shell reads SuperAdminName from ApiConfig instead.
+                    ApiConfig.SuperAdminName = superResult.FullName;
+
+                    DialogResult = DialogResult.OK;
+                    Close();
+                    return;
+                }
+
+                // Step 3 — both failed. Show the tenant login's error message,
+                // since that's the more likely path a user is trying.
+                MessageBox.Show(
+                    this,
+                    result.ErrorMessage ?? "Login failed.",
+                    "Sign In",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                _passwordTxtBx.Text = string.Empty;
+                _passwordTxtBx.Focus();
             }
             catch (Exception ex)
             {

@@ -20,7 +20,8 @@ namespace CRM_Morcaffein.Controllers
 
         public Task<EmployeeResponseDto> CreateAsync(
             string firstName, string lastName, string phone, string? email,
-            string role, string username, string password)
+            string role, string username, string password,
+            int? branchId = null)
         {
             var request = new CreateEmployeeRequest
             {
@@ -29,6 +30,7 @@ namespace CRM_Morcaffein.Controllers
                 ContactNumber = phone,
                 Email = email,
                 Role = role,
+                BranchId = branchId,
                 Username = username,
                 Password = password,
             };
@@ -36,8 +38,9 @@ namespace CRM_Morcaffein.Controllers
         }
 
         public Task<EmployeeResponseDto> UpdateAsync(
-    int employeeId, string firstName, string lastName, string phone,
-    string? email, string role, string? username = null)
+             int employeeId, string firstName, string lastName, string phone,
+             string? email, string role, string? username = null,
+             int? branchId = null)
         {
             var request = new UpdateEmployeeRequest
             {
@@ -46,6 +49,7 @@ namespace CRM_Morcaffein.Controllers
                 ContactNumber = phone,
                 Email = email,
                 Role = role,
+                BranchId = branchId,
                 Username = username,
             };
             return _api.UpdateEmployeeAsync(employeeId, request);

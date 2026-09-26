@@ -84,6 +84,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         // Overlay (blocks Row 2 until a customer is searched)
         // ---------------------------------------------------------------------
         private Panel _blockOverlayPanel = null!;
+        private Panel _lowerRow = null!;
 
         // =====================================================================
         // CONSTRUCTION
@@ -135,7 +136,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             var customerArea = BuildCustomerArea();
 
             // Row 2 — drinks + order/payables, fills the rest.
-            var lowerRow = new Panel
+            _lowerRow = new Panel
             {
                 Dock = DockStyle.Fill,
                 BackColor = BrandPalette.SurfacePrimary,
@@ -144,8 +145,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             var drinksArea = BuildDrinksArea();
             var rightColumn = BuildOrderColumn();
 
-            lowerRow.Controls.Add(drinksArea);
-            lowerRow.Controls.Add(rightColumn);
+            _lowerRow.Controls.Add(drinksArea);
+            _lowerRow.Controls.Add(rightColumn);
 
             // Overlay — absolutely positioned over lowerRow, brought to front. Covers
             // Row 2 only; the customer search box in Row 1 stays usable.
@@ -166,24 +167,50 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             };
             _blockOverlayPanel.Controls.Add(overlayMessage);
 
-            lowerRow.Controls.Add(_blockOverlayPanel);
+            _lowerRow.Controls.Add(_blockOverlayPanel);
             _blockOverlayPanel.BringToFront();
 
             void FitOverlay()
             {
+                // Only reposition while the overlay is actually visible. Reset­ting
+                // Bounds on an invisible panel still forces a repaint in WinForms,
+                // which was showing as a brief flash of the overlay during
+                // refreshes (customer search, sale completion) even when it was
+                // meant to be hidden.
+                if (!_blockOverlayPanel.Visible) return;
+
                 _blockOverlayPanel.Bounds = new Rectangle(
                     0, 0,
-                    lowerRow.ClientSize.Width,
-                    lowerRow.ClientSize.Height);
+                    _lowerRow.ClientSize.Width,
+                    _lowerRow.ClientSize.Height);
             }
-            lowerRow.Resize += (s, e) => FitOverlay();
+            _lowerRow.Resize += (s, e) => FitOverlay();
             FitOverlay();
 
-            tableCardPanel.Controls.Add(lowerRow);
+            tableCardPanel.Controls.Add(_lowerRow);
             tableCardPanel.Controls.Add(customerArea);
 
             cardOuterPanel.Controls.Add(tableCardPanel);
             Controls.Add(cardOuterPanel);
+        }
+
+        /// <summary>
+        /// Repositions the "search for a customer to begin" overlay to cover the
+        /// lower row. Called from BuildLayout on resize, and explicitly after a sale
+        /// completes (when the overlay becomes visible again and needs to be sized
+        /// to the current lower-row bounds).
+        ///
+        /// The reference to lowerRow is captured in a field instead of being passed
+        /// in, so the method is usable from outside BuildLayout.
+        /// </summary>
+        private void RefitOverlay()
+        {
+            if (_blockOverlayPanel == null || _lowerRow == null) return;
+
+            _blockOverlayPanel.Bounds = new Rectangle(
+                0, 0,
+                _lowerRow.ClientSize.Width,
+                _lowerRow.ClientSize.Height);
         }
 
         // =====================================================================
@@ -893,12 +920,19 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                     entity,
                     employeeId);
 
+                // Suspend layout for the whole "hide overlay + refresh every panel"
+                // sequence. Without this, each Refresh* call triggers a partial
+                // repaint and the overlay can briefly show through mid-sequence.
+                SuspendLayout();
                 _blockOverlayPanel.Visible = false;
 
                 BuildCategoryOptions();
                 RefreshProductsPanel();
                 RefreshCartLines();
                 RefreshSummary();
+
+                ResumeLayout(performLayout: true);
+                _blockOverlayPanel.Invalidate();
             }
             catch (Exception ex)
             {
@@ -1294,6 +1328,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _customerSearchErrorLabel.Text = string.Empty;
             _customerSearchTxtBx.Text = string.Empty;
             _cartStatusLabel.Text = string.Empty;
+
+            SuspendLayout();
             _blockOverlayPanel.Visible = true;
 
             _pwdSeniorChk.Checked = false;
@@ -1302,6 +1338,13 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             RefreshProductsPanel();
             RefreshCartLines();
             RefreshSummary();
+
+            ResumeLayout(performLayout: true);
+
+            // Refit the overlay now that _lowerRow has settled. The local
+            // FitOverlay function inside BuildLayout isn't visible here, so
+            // we call the equivalent class-level helper instead.
+            RefitOverlay();
         }
     }
 }

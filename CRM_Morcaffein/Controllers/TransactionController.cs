@@ -230,6 +230,7 @@ namespace CRM_Morcaffein.Controllers
                 CreatedBy = Order.CreatedBy,
                 CampaignId = Order.CampaignRedeems.FirstOrDefault()?.CampaignId,
                 HasPwdSeniorDiscount = Order.HasPwdSeniorDiscount,
+                BranchId = ResolveCurrentBranchId(),
                 Lines = Order.OrderItems.Select(i => new OrderLineDto
                 {
                     ProductId = i.ProductId,
@@ -384,6 +385,20 @@ namespace CRM_Morcaffein.Controllers
 
             var rewardItem = order.OrderItems.FirstOrDefault(i => i.ProductId == campaign.RewardProductId.Value);
             return rewardItem?.BaseSizePrice ?? 0m;
+        }
+
+        /// <summary>
+        /// The branch this sale belongs to. For Baristas it's their assigned branch;
+        /// for Managers/Admins it's whatever they picked in the topbar selector.
+        /// Falls back to 1 if neither is set — shouldn't happen in practice, but the
+        /// DB requires a non-null BranchId on Orders.
+        /// </summary>
+        private static int ResolveCurrentBranchId()
+        {
+            var session = Session.EmployeeSession.Current;
+            return session?.CurrentBranchId
+                ?? session?.Employee.BranchId
+                ?? 1;
         }
 
         private static decimal CalculatePromoDiscount(Campaign campaign, decimal orderTotal)

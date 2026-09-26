@@ -182,6 +182,7 @@ namespace CRM_Morcaffein.api.Controllers
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
+                BranchId = request.BranchId,
             };
 
             tenant.Feedbacks.Add(feedback);

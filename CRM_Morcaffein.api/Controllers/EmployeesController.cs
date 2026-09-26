@@ -59,6 +59,7 @@ namespace CRM_Morcaffein.api.Controllers
             var query = tenant.Employees
                 .AsNoTracking()
                 .Include(e => e.Credential)
+                .Include(e => e.Branch)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -87,6 +88,8 @@ namespace CRM_Morcaffein.api.Controllers
                     Email = e.Email,
                     Role = e.Role,
                     IsActive = e.IsActive,
+                    BranchId = e.BranchId,
+                    BranchName = e.Branch != null ? e.Branch.BranchName : null,
                     Username = e.Credential != null ? e.Credential.Username : null,
                     LastLoginDate = e.Credential != null ? e.Credential.LastLoginDate : null,
                     HasCredential = e.Credential != null
@@ -114,6 +117,7 @@ namespace CRM_Morcaffein.api.Controllers
             var employee = await tenant.Employees
                 .AsNoTracking()
                 .Include(e => e.Credential)
+                .Include(e => e.Branch)
                 .Where(e => e.EmployeeId == id)
                 .Select(e => new EmployeeResponseDto
                 {
@@ -125,6 +129,8 @@ namespace CRM_Morcaffein.api.Controllers
                     Email = e.Email,
                     Role = e.Role,
                     IsActive = e.IsActive,
+                    BranchId = e.BranchId,
+                    BranchName = e.Branch != null ? e.Branch.BranchName : null,
                     Username = e.Credential != null ? e.Credential.Username : null,
                     LastLoginDate = e.Credential != null ? e.Credential.LastLoginDate : null,
                     HasCredential = e.Credential != null
@@ -184,6 +190,31 @@ namespace CRM_Morcaffein.api.Controllers
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
+            // ---- Branch validation ----
+            // Baristas MUST be pinned to a branch. Managers may be pinned
+            // OR all-branch (BranchId = null). Admins can't be created here
+            // (blocked above), but if this ever changes, Admins must be null.
+            int? resolvedBranchId = request.BranchId;
+
+            if (requestedRole.Equals("Barista", StringComparison.OrdinalIgnoreCase) &&
+                resolvedBranchId is null)
+            {
+                return BadRequest(new { message = "Baristas must be assigned to a branch." });
+            }
+
+            string? resolvedBranchName = null;
+            if (resolvedBranchId.HasValue)
+            {
+                resolvedBranchName = await tenant.Branches
+                    .AsNoTracking()
+                    .Where(b => b.BranchId == resolvedBranchId.Value && b.IsActive)
+                    .Select(b => b.BranchName)
+                    .FirstOrDefaultAsync();
+
+                if (resolvedBranchName is null)
+                    return BadRequest(new { message = $"Branch {resolvedBranchId.Value} not found or is inactive." });
+            }
+
             // Uniqueness of username
             var usernameTaken = await tenant.Credentials
                 .AnyAsync(c => c.Username == request.Username.Trim());
@@ -197,6 +228,7 @@ namespace CRM_Morcaffein.api.Controllers
                 ContactNumber = cleanedPhone,
                 Email = cleanedEmail,
                 Role = requestedRole,
+                BranchId = resolvedBranchId,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -236,6 +268,8 @@ namespace CRM_Morcaffein.api.Controllers
                 Email = employee.Email,
                 Role = employee.Role,
                 IsActive = employee.IsActive,
+                BranchId = employee.BranchId,
+                BranchName = resolvedBranchName,
                 Username = credential.Username,
                 LastLoginDate = credential.LastLoginDate,
                 HasCredential = true
@@ -293,6 +327,28 @@ namespace CRM_Morcaffein.api.Controllers
                 !requestedRole.Equals("Manager", StringComparison.OrdinalIgnoreCase))
                 return BadRequest(new { message = "Role must be Barista or Manager." });
 
+            // ---- Branch validation (same rules as CreateEmployee) ----
+            int? resolvedBranchId = request.BranchId;
+
+            if (requestedRole.Equals("Barista", StringComparison.OrdinalIgnoreCase) &&
+                resolvedBranchId is null)
+            {
+                return BadRequest(new { message = "Baristas must be assigned to a branch." });
+            }
+
+            string? resolvedBranchName = null;
+            if (resolvedBranchId.HasValue)
+            {
+                resolvedBranchName = await tenant.Branches
+                    .AsNoTracking()
+                    .Where(b => b.BranchId == resolvedBranchId.Value && b.IsActive)
+                    .Select(b => b.BranchName)
+                    .FirstOrDefaultAsync();
+
+                if (resolvedBranchName is null)
+                    return BadRequest(new { message = $"Branch {resolvedBranchId.Value} not found or is inactive." });
+            }
+
             // ---- Username change (optional) ----
             // If Username is provided, validate and update the credential in the same
             // SaveChanges. If it's null/empty, leave it alone. If it matches the current
@@ -330,6 +386,7 @@ namespace CRM_Morcaffein.api.Controllers
             employee.ContactNumber = cleanedPhone;
             employee.Email = cleanedEmail;
             employee.Role = requestedRole;
+            employee.BranchId = resolvedBranchId;
             employee.UpdatedAt = DateTime.UtcNow;
 
             try
@@ -356,6 +413,8 @@ namespace CRM_Morcaffein.api.Controllers
                 Email = employee.Email,
                 Role = employee.Role,
                 IsActive = employee.IsActive,
+                BranchId = employee.BranchId,
+                BranchName = resolvedBranchName,
                 Username = credential?.Username,
                 LastLoginDate = credential?.LastLoginDate,
                 HasCredential = credential != null

@@ -8,5 +8,13 @@ public class UpdateEmployeeRequest
     public string? Email { get; set; }
     public string Role { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Same semantics as CreateEmployeeRequest.BranchId:
+    ///   - Barista: required
+    ///   - Manager: optional (null = all-branch)
+    ///   - Admin:   must be null
+    /// </summary>
+    public int? BranchId { get; set; }
+
     public string? Username { get; set; }
 }

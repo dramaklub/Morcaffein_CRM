@@ -1,6 +1,7 @@
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.Session;
 
 
 namespace CRM_Morcaffein.winforms.Views.Controls
@@ -16,6 +17,12 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// </summary>
     public class ManagerDashboardView : UserControl
     {
+        /// <summary>
+        /// Raised when the Basic-tier "Feedback" pod is clicked. FrmMain
+        /// subscribes and performs the actual nav to the Feedback tab.
+        /// </summary>
+        public event EventHandler? NavigateToFeedbackRequested;
+
         private readonly DashboardController _controller;
 
         private DashboardDateRangeFilterControl _dateFilter = null!;
@@ -25,6 +32,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private KpiSummaryPodControl _revenuePod = null!;
         private KpiSummaryPodControl _ordersPod = null!;
         private KpiSummaryPodControl _promosPod = null!;
+        private KpiSummaryPodControl _feedbackPod = null!;
 
         // Charts
         private PeakHoursHeatmapControl       _peakHoursCard    = null!; // Row 1 (full width)
@@ -126,20 +134,53 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             filterRow.Controls.Add(_dateFilter);
             filterRow.Controls.Add(_exportBtn);
 
-            // ---- KPI Pods (4 Equal Columns) ---- taller + more room below so the
-            // pods aren't crowded by the chart row right under them.
+            // ---- KPI Pods (3 Equal Columns) ----
+            // Column 3 depends on tier: Standard/Full get "Promos Used" (opens a
+            // modal), Basic gets "Feedback" (jumps to the Feedback tab, shows the
+            // pending count). Basic has no Actions module, so there's nothing to
+            // report on promos.
+            var hasBI = EmployeeSession.Current?.HasModule("BusinessIntelligence") == true;
+
             var kpiRow = MakeBentoRow(3, 96, bottomGap: 18);
-            _revenuePod = new KpiSummaryPodControl("Total Revenue", "₱0") { Dock = DockStyle.Fill, Margin = new Padding(3) };
-            _ordersPod = new KpiSummaryPodControl("Avg. per Sale", "₱0") { Dock = DockStyle.Fill, Margin = new Padding(3) };
-            _promosPod = new KpiSummaryPodControl("Promos Used", "0") { Dock = DockStyle.Fill, Margin = new Padding(3) };
+
+            _revenuePod = new KpiSummaryPodControl("Total Revenue", "₱0")
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3),
+            };
+            _ordersPod = new KpiSummaryPodControl("Avg. per Sale", "₱0")
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3),
+            };
 
             _revenuePod.CardClicked += (s, e) => ShowRevenueModal();
             _ordersPod.CardClicked += (s, e) => ShowSalesPerOrderModal();
-            _promosPod.CardClicked += (s, e) => ShowPromosModal();
 
             kpiRow.Controls.Add(_revenuePod, 0, 0);
             kpiRow.Controls.Add(_ordersPod, 1, 0);
-            kpiRow.Controls.Add(_promosPod, 2, 0);
+
+            if (hasBI)
+            {
+                _promosPod = new KpiSummaryPodControl("Promos Used", "0")
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(3),
+                };
+                _promosPod.CardClicked += (s, e) => ShowPromosModal();
+                kpiRow.Controls.Add(_promosPod, 2, 0);
+            }
+            else
+            {
+                _feedbackPod = new KpiSummaryPodControl("Feedback", "0")
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(3),
+                };
+                _feedbackPod.CardClicked += (s, e)
+                    => NavigateToFeedbackRequested?.Invoke(this, EventArgs.Empty);
+                kpiRow.Controls.Add(_feedbackPod, 2, 0);
+            }
 
             // ---- Row 1 (1 chart): Peak Hours Transaction Velocity (Full Width) ----
             // Taller than before so the heatmap actually fills the card instead of
@@ -180,12 +221,22 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             row3.Controls.Add(_csatCard, 1, 0);
 
             // Assemble — FlowLayoutPanel (TopDown) stacks these in exactly this
-            // order, top to bottom. No cell coordinates needed.
+            // order. Rows that the tenant's plan doesn't include are simply
+            // never added, so they don't consume vertical space.
+            var session = EmployeeSession.Current;
+
             _bentoContainer.Controls.Add(filterRow); // Above the KPI pods
             _bentoContainer.Controls.Add(kpiRow);
             _bentoContainer.Controls.Add(peakRow);
-            _bentoContainer.Controls.Add(row2);
-            _bentoContainer.Controls.Add(row3);
+
+            // Row 2 (Age Demographics + Top Coffees) and Row 3 (Campaign Lift +
+            // Customer Ratings) are BusinessIntelligence content. Basic tenants
+            // don't get them.
+            if (session?.HasModule("BusinessIntelligence") == true)
+            {
+                _bentoContainer.Controls.Add(row2);
+                _bentoContainer.Controls.Add(row3);
+            }
 
             _contentHost.Controls.Add(_bentoContainer);
             _contentHost.Resize += (s, e) => SyncWidth();
@@ -242,7 +293,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                     _                          => 30,
                 };
 
-              
+                var branchId = EmployeeSession.Current?.CurrentBranchId;
+
+
 
                 // 1. Static Velocity Heatmap (Not affected by range filter)
                 _peakHoursCard.BindData(await _controller.GetPeakHoursAsync());
@@ -250,27 +303,34 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 // 2. Date-filtered metrics — PosDiagnosticsDto has no standalone chart
                 // card in this view anymore, but the KPI pods and Revenue/Sales-per-
                 // Order modals still derive their numbers from it.
-                _latestPos = await _controller.GetPosDiagnosticsAsync(days);
+                _latestPos = await _controller.GetPosDiagnosticsAsync(days, branchId);
 
                 _latestAov = _latestPos.TotalTransactions > 0 ? _latestPos.NetSales / _latestPos.TotalTransactions : 0m;
                 // KPI values are shown in whole pesos — cents are visual noise at this size,
                 // and the exact figure is a click away in the drill-down modal.
                 _revenuePod.UpdateData($"₱{_latestPos.NetSales:N0}");
                 _ordersPod.UpdateData($"₱{_latestAov:N0}");
-                _promosPod.UpdateData($"{_latestPos.CampaignTransactionCount:N0}");
+                _promosPod?.UpdateData($"{_latestPos.CampaignTransactionCount:N0}");
 
-                _latestCsat = await _controller.GetFeedbackRatingsAsync(days);
+                _latestCsat = await _controller.GetFeedbackRatingsAsync(days, branchId);
                 _csatCard.BindData(_latestCsat);
 
-                _latestRecentOrders = await _controller.GetRecentOrdersAsync(days, 15);
+                // Basic-tier Feedback pod shows the pending count. Only present
+                // when the tenant has no BusinessIntelligence module.
+                _feedbackPod?.UpdateData($"{_latestCsat.PendingFeedbackCount:N0}");
+
+                _latestRecentOrders = await _controller.GetRecentOrdersAsync(days, 15, branchId);
                 // Feeds the Promos Redeemed KPI pod's drill-down modal. The Campaign
                 // Lift chart card below is a separate endpoint/DTO (daily revenue vs
                 // redemption count), not this one.
                 _latestCampaignRoi = await _controller.GetCampaignRoiAsync(days);
 
-                _demographicsCard.BindData(await _controller.GetAgeDemographicsAsync(days));
-                _topProductsCard.BindData(await _controller.GetTopProductsAsync(days, 5));
-                _campaignLiftCard.BindData(await _controller.GetCampaignLiftAsync(days));
+                if (EmployeeSession.Current?.HasModule("BusinessIntelligence") == true)
+                {
+                    _demographicsCard.BindData(await _controller.GetAgeDemographicsAsync(days, branchId));
+                    _topProductsCard.BindData(await _controller.GetTopProductsAsync(days, 5, branchId));
+                    _campaignLiftCard.BindData(await _controller.GetCampaignLiftAsync(days, branchId));
+                }
             }
             catch (Exception ex)
             {
@@ -307,7 +367,18 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _ => 30,
             };
 
-            var defaultName = $"Morcaffein-Operations-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf";
+            // Step 1 — ask which report.
+            using var picker = new ExportReportTypeModal(
+                "Operations summary: revenue, peak hours, demographics, top items, ratings.");
+            if (picker.ShowDialog(FindForm()) != DialogResult.OK)
+                return;
+
+            var isLedger = picker.SelectedReport == ReportKind.TransactionLedger;
+
+            // Step 2 — SaveFileDialog, filename varies by report kind.
+            var defaultName = isLedger
+                ? $"Morcaffein-Ledger-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf"
+                : $"Morcaffein-Operations-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf";
 
             using var dlg = new SaveFileDialog
             {
@@ -320,13 +391,17 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             if (dlg.ShowDialog(FindForm()) != DialogResult.OK)
                 return;
 
+            // Step 3 — generate the chosen report.
             try
             {
                 _exportBtn.Enabled = false;
                 _exportBtn.Text = "Generating…";
 
                 var report = new ReportController();
-                var bytes = await report.GenerateManagerReportAsync(days);
+                var bytes = isLedger
+                    ? await report.GenerateTransactionLedgerAsync(days)
+                    : await report.GenerateManagerReportAsync(days);
+
                 await File.WriteAllBytesAsync(dlg.FileName, bytes);
 
                 Toast.Show(this, $"Report saved to {Path.GetFileName(dlg.FileName)}.", ToastKind.Success);

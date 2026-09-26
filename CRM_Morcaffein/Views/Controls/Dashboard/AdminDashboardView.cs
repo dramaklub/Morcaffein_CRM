@@ -1,6 +1,7 @@
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.Session;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -30,21 +31,33 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         /// </summary>
         public event EventHandler? NavigateToApprovalsRequested;
 
+        /// <summary>
+        /// Raised when the Basic-tier "Employees" pod is clicked. FrmMain
+        /// subscribes and navigates to the Manage Users tab.
+        /// </summary>
+        public event EventHandler? NavigateToManageUsersRequested;
+
+
         private readonly DashboardController _controller;
 
         private DashboardDateRangeFilterControl _dateFilter = null!;
         private Button _exportBtn = null!;
 
-        // KPI Pods (3)
+        // KPI Pods (2 or 3 depending on tier)
         private KpiSummaryPodControl _revenuePod = null!;
         private KpiSummaryPodControl _ltvPod = null!;
         private KpiSummaryPodControl _pendingApprovalsPod = null!;
+        private KpiSummaryPodControl _employeesPod = null!;
 
         // Charts
-        private PeakHoursHeatmapControl _peakHoursCard = null!;
+        private VisitFrequencyControl _visitFreqCard = null!; // Row 2 (full width)
         private RevenueVsDiscountsControl _revenueVsDiscountsCard = null!;
         private NewVsReturningControl _newVsReturningCard = null!;
         private AuditLogSummaryControl _auditSummaryCard = null!;
+
+        // Basic-tier-only cards (shown when the tenant has no BusinessIntelligence)
+        private RecentEmployeesControl _recentEmployeesCard = null!;
+        private RecentFeedbackControl _recentFeedbackCard = null!;
 
         // Cached DTOs for pod drill-down modals
         private PosDiagnosticsDto? _latestPos;
@@ -126,46 +139,69 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             filterRow.Controls.Add(_dateFilter);
             filterRow.Controls.Add(_exportBtn);
 
-            // ---- KPI Pods (3 Equal Columns) ----
-            var kpiRow = MakeBentoRow(3, 96, bottomGap: 18);
+            // ---- KPI Pods (2 or 3 columns depending on tier) ----
+            // Standard/Full: Revenue, LTV, Pending Approvals.
+            // Basic:         Revenue, Employees (navigates to Manage Users).
+            //
+            // LTV and Pending Approvals are both BI-adjacent — LTV is a
+            // strategic metric, and there are no campaigns to approve
+            // without the Actions module. Basic tenants get Employees as
+            // a second pod, which shows headcount and links to Manage Users.
+            var hasBIForPods = EmployeeSession.Current?.HasModule("BusinessIntelligence") == true;
+
+            var podCount = hasBIForPods ? 3 : 2;
+            var kpiRow = MakeBentoRow(podCount, 96, bottomGap: 18);
 
             _revenuePod = new KpiSummaryPodControl("Total Revenue", "₱0")
             {
                 Dock = DockStyle.Fill,
                 Margin = new Padding(3),
             };
-
-            _ltvPod = new KpiSummaryPodControl("Member Lifetime Value", "₱0")
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(3),
-            };
-
-            _pendingApprovalsPod = new KpiSummaryPodControl("Pending Approvals", "0")
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(3),
-            };
-
             _revenuePod.CardClicked += (s, e) => ShowRevenueModal();
-            _ltvPod.CardClicked += (s, e) => ShowLtvModal();
-            // Pending Approvals pod: navigate to the Approvals tab instead of a modal.
-            _pendingApprovalsPod.CardClicked += (s, e)
-                => NavigateToApprovalsRequested?.Invoke(this, EventArgs.Empty);
-
             kpiRow.Controls.Add(_revenuePod, 0, 0);
-            kpiRow.Controls.Add(_ltvPod, 1, 0);
-            kpiRow.Controls.Add(_pendingApprovalsPod, 2, 0);
 
-            // ---- Row 1 (full width): Peak Hours ----
-            var peakRow = MakeBentoRow(1, 280, bottomGap: 14);
-            _peakHoursCard = new PeakHoursHeatmapControl
+            if (hasBIForPods)
+            {
+                _ltvPod = new KpiSummaryPodControl("Member Lifetime Value", "₱0")
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(3),
+                };
+                _ltvPod.CardClicked += (s, e) => ShowLtvModal();
+                kpiRow.Controls.Add(_ltvPod, 1, 0);
+
+                _pendingApprovalsPod = new KpiSummaryPodControl("Pending Approvals", "0")
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(3),
+                };
+                _pendingApprovalsPod.CardClicked += (s, e)
+                    => NavigateToApprovalsRequested?.Invoke(this, EventArgs.Empty);
+                kpiRow.Controls.Add(_pendingApprovalsPod, 2, 0);
+            }
+            else
+            {
+                _employeesPod = new KpiSummaryPodControl("Employees", "0")
+                {
+                    Dock = DockStyle.Fill,
+                    Margin = new Padding(3),
+                };
+                _employeesPod.CardClicked += (s, e)
+                    => NavigateToManageUsersRequested?.Invoke(this, EventArgs.Empty);
+                kpiRow.Controls.Add(_employeesPod, 1, 0);
+            }
+
+            // ---- Row 1 (full width): Audit Log Summary ----
+            // Moved up from the bottom — governance visibility shouldn't require
+            // scrolling past the strategic charts.
+            var auditRow = MakeBentoRow(1, 160, bottomGap: 14);
+            _auditSummaryCard = new AuditLogSummaryControl
             {
                 Dock = DockStyle.Fill,
                 Margin = new Padding(3),
                 MinimumSize = new Size(100, 100),
             };
-            peakRow.Controls.Add(_peakHoursCard, 0, 0);
+            auditRow.Controls.Add(_auditSummaryCard, 0, 0);
 
             // ---- Row 2 (2-up): Revenue vs Discounts + New vs Returning ----
             var row2 = MakeBentoRow(2, 300, bottomGap: 14);
@@ -186,22 +222,66 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             row2.Controls.Add(_revenueVsDiscountsCard, 0, 0);
             row2.Controls.Add(_newVsReturningCard, 1, 0);
 
-            // ---- Row 3 (full width): Audit Log Summary ----
-            var row3 = MakeBentoRow(1, 160, bottomGap: 4);
-            _auditSummaryCard = new AuditLogSummaryControl
+            // ---- Row 3 (full width): Customer Visit Frequency ----
+            var visitRow = MakeBentoRow(1, 260, bottomGap: 4);
+            _visitFreqCard = new VisitFrequencyControl
             {
                 Dock = DockStyle.Fill,
                 Margin = new Padding(3),
                 MinimumSize = new Size(100, 100),
             };
-            row3.Controls.Add(_auditSummaryCard, 0, 0);
+            visitRow.Controls.Add(_visitFreqCard, 0, 0);
 
             // Assemble — FlowLayoutPanel(TopDown) stacks in exactly this order.
+            // BusinessIntelligence gates the analytical rows (Revenue vs
+            // Discounts, New vs Returning, Visit Frequency). Basic tenants
+            // get the filter bar + KPI pods + Audit strip only.
+            // ---- Basic-tier-only row: Recent Employees + Recent Feedback ----
+            // Shown when the tenant has no BusinessIntelligence module. Fills
+            // the visual gap where the BI charts would be, and matches what
+            // a Basic Admin's job actually is: manage people, handle feedback.
+            var basicRow = MakeBentoRow(2, 280, bottomGap: 14);
+            custRowStyles(basicRow, 50f, 50f);
+
+            _recentEmployeesCard = new RecentEmployeesControl
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3),
+                MinimumSize = new Size(100, 100),
+            };
+            _recentEmployeesCard.RowClicked += (s, employeeId)
+                => NavigateToManageUsersRequested?.Invoke(this, EventArgs.Empty);
+
+            _recentFeedbackCard = new RecentFeedbackControl
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(3),
+                MinimumSize = new Size(100, 100),
+            };
+            // Recent Feedback is display-only on the Admin dashboard — the
+            // Feedback queue is a Manager work surface, not an Admin one.
+            // The card gives oversight; the Manager operates the queue.
+
+            basicRow.Controls.Add(_recentEmployeesCard, 0, 0);
+            basicRow.Controls.Add(_recentFeedbackCard, 1, 0);
+
+            var session = EmployeeSession.Current;
+
             _bentoContainer.Controls.Add(filterRow);
             _bentoContainer.Controls.Add(kpiRow);
-            _bentoContainer.Controls.Add(peakRow);
-            _bentoContainer.Controls.Add(row2);
-            _bentoContainer.Controls.Add(row3);
+
+            if (session?.HasModule("BusinessIntelligence") == true)
+            {
+                // Full/Standard: BI rows.
+                _bentoContainer.Controls.Add(auditRow);
+                _bentoContainer.Controls.Add(row2);
+                _bentoContainer.Controls.Add(visitRow);
+            }
+            else
+            {
+                // Basic: the two-list row instead.
+                _bentoContainer.Controls.Add(basicRow);
+            }
 
             _contentHost.Controls.Add(_bentoContainer);
             _contentHost.Resize += (s, e) => SyncWidth();
@@ -254,37 +334,45 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                     _ => 30,
                 };
 
-                // ---- Static heatmap (unaffected by date filter) ----
-                _peakHoursCard.BindData(await _controller.GetPeakHoursAsync());
+                var branchId = EmployeeSession.Current?.CurrentBranchId;
+                var hasBI = EmployeeSession.Current?.HasModule("BusinessIntelligence") == true;
 
-                // ---- Total Revenue pod ----
-                _latestPos = await _controller.GetPosDiagnosticsAsync(days);
+                // ---- KPI pods: always shown for Admin ----
+
+                _latestPos = await _controller.GetPosDiagnosticsAsync(days, branchId);
                 _revenuePod.UpdateData($"₱{_latestPos.NetSales:N0}");
 
-                // ---- Member LTV pod, with at-risk sub-line ----
-                _latestLtv = await _controller.GetCustomerLtvChurnAsync(days);
-                _ltvPod.UpdateData($"₱{_latestLtv.OverallAverageLtv:N0}");
+                if (hasBI)
+                {
+                    _latestLtv = await _controller.GetCustomerLtvChurnAsync(days);
+                    _ltvPod?.UpdateData($"₱{_latestLtv.OverallAverageLtv:N0}");
+                }
 
-                // ---- Pending Approvals pod ----
                 var audit = await _controller.GetAuditSummaryAsync(days);
-                _pendingApprovalsPod.UpdateData($"{audit.PendingCampaignApprovals:N0}");
+                _pendingApprovalsPod?.UpdateData($"{audit.PendingCampaignApprovals:N0}");
+                _employeesPod?.UpdateData($"{audit.ActiveEmployeeCount:N0}");
                 _auditSummaryCard.BindData(audit);
 
-                // ---- Revenue vs Discounts chart ----
-                // Always trailing window sized to the date filter, capped at the
-                // endpoint's 730-day max.
-                var discountDays = days switch
+                // Basic-tier cards — only present when the tenant has no BI.
+                if (!hasBI)
                 {
-                    1 => 30,   // "Today" makes no sense for a trend chart; show trailing 30 days
-                    7 => 30,   // "7 Days" gives too few buckets; show trailing 30 days
-                    _ => 90,   // "1 Month" and Custom both get 90 days for a good trend signal
-                };
-                _revenueVsDiscountsCard.BindData(await _controller.GetRevenueVsDiscountsAsync(discountDays));
+                    _recentEmployeesCard.BindData(await _controller.GetRecentEmployeesAsync(5));
+                    _recentFeedbackCard.BindData(await _controller.GetRecentFeedbackAsync(5, branchId));
+                }
 
-                // ---- New vs Returning chart ----
-                // Fixed 6-month window, same rationale as Loyalty Tier on Manager's
-                // dashboard — this is a trend chart, not a KPI tied to the date filter.
-                _newVsReturningCard.BindData(await _controller.GetNewVsReturningAsync(6));
+                // ---- BI-gated charts ----
+                if (hasBI)
+                {
+                    var discountDays = days switch
+                    {
+                        1 => 30,
+                        7 => 30,
+                        _ => 90,
+                    };
+                    _revenueVsDiscountsCard.BindData(await _controller.GetRevenueVsDiscountsAsync(discountDays));
+                    _newVsReturningCard.BindData(await _controller.GetNewVsReturningAsync(6));
+                    _visitFreqCard.BindData(await _controller.GetVisitFrequencyAsync());
+                }
             }
             catch (Exception ex)
             {
@@ -315,7 +403,18 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _ => 30,
             };
 
-            var defaultName = $"Morcaffein-Business-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf";
+            // Step 1 — ask which report.
+            using var picker = new ExportReportTypeModal(
+                "Business summary: revenue vs discounts, member LTV, retention, audit log.");
+            if (picker.ShowDialog(FindForm()) != DialogResult.OK)
+                return;
+
+            var isLedger = picker.SelectedReport == ReportKind.TransactionLedger;
+
+            // Step 2 — SaveFileDialog, filename varies by report kind.
+            var defaultName = isLedger
+                ? $"Morcaffein-Ledger-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf"
+                : $"Morcaffein-Business-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf";
 
             using var dlg = new SaveFileDialog
             {
@@ -328,13 +427,17 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             if (dlg.ShowDialog(FindForm()) != DialogResult.OK)
                 return;
 
+            // Step 3 — generate the chosen report.
             try
             {
                 _exportBtn.Enabled = false;
                 _exportBtn.Text = "Generating…";
 
                 var report = new ReportController();
-                var bytes = await report.GenerateAdminReportAsync(days);
+                var bytes = isLedger
+                    ? await report.GenerateTransactionLedgerAsync(days)
+                    : await report.GenerateAdminReportAsync(days);
+
                 await File.WriteAllBytesAsync(dlg.FileName, bytes);
 
                 Toast.Show(this, $"Report saved to {Path.GetFileName(dlg.FileName)}.", ToastKind.Success);

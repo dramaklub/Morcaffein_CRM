@@ -39,13 +39,95 @@ namespace CRM_Morcaffein.winforms.Views
             logoutBtn.Click += LogoutBtn_Click;
         }
 
-        private void FrmMain_Load(object sender, EventArgs e)
+        private async void FrmMain_Load(object sender, EventArgs e)
         {
+            await LoadBranchesAsync();
+
             if (sidebarPanel.Controls.OfType<Button>().Any())
             {
                 var firstNav = sidebarPanel.Controls.OfType<Button>().First();
                 firstNav.PerformClick();
             }
+        }
+
+        /// <summary>
+        /// Fetches the branch list and populates the topbar selector. Called once at
+        /// startup after login. Baristas get the selector hidden — they're auto-pinned
+        /// to their own branch. Managers and Admins can switch, including an "All Branches"
+        /// option.
+        /// </summary>
+        private async Task LoadBranchesAsync()
+        {
+            var role = EmployeeSession.Current?.Employee?.Role ?? "";
+            var hasBranching = EmployeeSession.Current?.HasModule("Branching") == true;
+
+            // No Branching entitlement → no selector, and force-session to
+            // the caller's own branch (or fall back to branch 1) so their API
+            // calls are still scoped even though they can't switch.
+            if (!hasBranching)
+            {
+                branchSelectorPanel.Visible = false;
+                EmployeeSession.Current!.CurrentBranchId =
+                    EmployeeSession.Current.Employee.BranchId ?? 1;
+                return;
+            }
+
+            // Baristas are pinned to their own branch and don't get the selector.
+            if (role.Equals("Barista", StringComparison.OrdinalIgnoreCase))
+            {
+                branchSelectorPanel.Visible = false;
+                EmployeeSession.Current!.CurrentBranchId = EmployeeSession.Current.Employee.BranchId;
+                return;
+            }
+
+            try
+            {
+                var api = new CRM_Morcaffein.winforms.Services.Api.BranchApi();
+                var branches = await api.GetBranchesAsync();
+
+                branchSelectorCombo.Items.Clear();
+                branchSelectorCombo.Items.Add(new BranchItem(null, "All Branches"));
+                foreach (var b in branches)
+                    branchSelectorCombo.Items.Add(new BranchItem(b.BranchId, b.BranchName));
+
+                branchSelectorCombo.DisplayMember = "Display";
+                branchSelectorCombo.SelectedIndex = 0;   // default = All Branches
+
+                branchSelectorCombo.SelectedIndexChanged += BranchSelectorCombo_SelectedIndexChanged;
+            }
+            catch (Exception ex)
+            {
+                // If branches fail to load, hide the selector and default to all branches.
+                branchSelectorPanel.Visible = false;
+                EmployeeSession.Current!.CurrentBranchId = null;
+                System.Diagnostics.Debug.WriteLine($"Branch load failed: {ex.Message}");
+            }
+        }
+
+        private void BranchSelectorCombo_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            if (branchSelectorCombo.SelectedItem is not BranchItem item)
+                return;
+
+            EmployeeSession.Current!.CurrentBranchId = item.BranchId;
+
+            // Reload the currently-active view so it picks up the new branch.
+            // We don't cache the active view factory, so re-click the active nav button.
+            var activeNav = sidebarPanel.Controls.OfType<Button>()
+                .FirstOrDefault(b =>
+                    b.BackColor == BrandPalette.NavActiveBackground);
+            activeNav?.PerformClick();
+        }
+
+        /// <summary>
+        /// Small wrapper so the dropdown can hold both "All Branches" (BranchId = null)
+        /// and specific branches (BranchId = N) without nullable binding pain.
+        /// </summary>
+        private sealed class BranchItem
+        {
+            public int? BranchId { get; }
+            public string Display { get; }
+            public BranchItem(int? id, string display) { BranchId = id; Display = display; }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -80,43 +162,83 @@ namespace CRM_Morcaffein.winforms.Views
             var isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                           role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
 
-            // (label, icon filename without extension, view factory).
+            var session = EmployeeSession.Current;
+
+            // Every nav item is added through a small helper that checks
+            // whether the tenant's plan includes the relevant module. If
+            // entitlements never loaded (session.Entitlements is null) or
+            // the plan doesn't include the module, HasModule returns false
+            // and the item just doesn't render.
             var navItems = new List<(string Text, string IconFile, Action onClick)>();
+
+            void AddIfEntitled(string text, string iconFile, string moduleKey, Func<UserControl> factory)
+            {
+                if (session?.HasModule(moduleKey) != true) return;
+                navItems.Add((text, iconFile, () => ShowView(factory())));
+            }
+
+            void AddAlways(string text, string iconFile, Func<UserControl> factory)
+            {
+                navItems.Add((text, iconFile, () => ShowView(factory())));
+            }
 
             if (isAdmin)
             {
-                // Admin dashboard raises NavigateToApprovalsRequested when the Pending
-                // Approvals pod is clicked. Rather than call ShowView from inside the view
-                // (which would couple the view to nav logic), the view just raises an event
-                // and FrmMain performs the navigation — same click-the-nav-button path a user
-                // would take, so the sidebar active state stays in sync.
-                navItems.Add(("Dashboard", "Dashboard", () =>
+                // Admin-only nav. Dashboard is gated by Dashboard entitlement
+                // (present in all tiers). Approvals is gated by Actions —
+                // no campaigns to approve without Retention/Actions.
+                // Manage Users is fundamental and always present.
+                AddIfEntitled("Dashboard", "Dashboard", "Dashboard", () =>
                 {
                     var dashboardView = new AdminDashboardView();
+
                     dashboardView.NavigateToApprovalsRequested += (s, e) =>
                     {
                         var approvalsBtn = sidebarPanel.Controls.OfType<Button>()
                             .FirstOrDefault(b => b.Text == "Approvals");
                         approvalsBtn?.PerformClick();
                     };
-                    ShowView(dashboardView);
+
+                    dashboardView.NavigateToManageUsersRequested += (s, e) =>
+                    {
+                        var usersBtn = sidebarPanel.Controls.OfType<Button>()
+                            .FirstOrDefault(b => b.Text == "Manage Users");
+                        usersBtn?.PerformClick();
+                    };
+
+                    return dashboardView;
+                });
+
+                if (session?.HasModule("Actions") == true)
+                {
+                    AddAlways("Approvals", "Approvals", () => new ApprovalsView());
                 }
-                ));
-                navItems.Add(("Approvals", "Approvals", () => ShowView(new ApprovalsView())));
-                navItems.Add(("Manage Users", "User Mgmt", () => ShowView(new ManageUsersView())));
+
+
+                AddAlways("Manage Users", "User Mgmt", () => new ManageUsersView());
             }
             else if (isManager)
             {
-                navItems.Add(("Dashboard", "Dashboard", () => ShowView(new ManagerDashboardView())));
-                navItems.Add(("Campaign", "Campaign", () => ShowView(new CampaignManagementView())));
-                navItems.Add(("Customers", "Customers", () => ShowView(new CustomerManagementView())));
-                navItems.Add(("Feedback", "Feedback", () => ShowView(new FeedbackManagementView())));
+                AddIfEntitled("Dashboard", "Dashboard", "Dashboard", () =>
+                {
+                    var dashboardView = new ManagerDashboardView();
+                    dashboardView.NavigateToFeedbackRequested += (s, e) =>
+                    {
+                        var feedbackBtn = sidebarPanel.Controls.OfType<Button>()
+                            .FirstOrDefault(b => b.Text == "Feedback");
+                        feedbackBtn?.PerformClick();
+                    };
+                    return dashboardView;
+                });
+                AddIfEntitled("Campaign", "Campaign", "Actions", () => new CampaignManagementView());
+                AddIfEntitled("Customers", "Customers", "DataCollection", () => new CustomerManagementView());
+                AddIfEntitled("Feedback", "Feedback", "Feedback", () => new FeedbackManagementView());
             }
             else
             {
-                navItems.Add(("Transactions", "Cart", () => ShowView(new TransactionView())));
-                navItems.Add(("Customers", "Customers", () => ShowView(new CustomerManagementView())));
-                navItems.Add(("Feedback", "Feedback", () => ShowView(new FeedbackManagementView())));
+                AddIfEntitled("Transactions", "Cart", "Transactions", () => new TransactionView());
+                AddIfEntitled("Customers", "Customers", "DataCollection", () => new CustomerManagementView());
+                AddIfEntitled("Feedback", "Feedback", "Feedback", () => new FeedbackManagementView());
             }
 
             int y = 20;
@@ -140,6 +262,23 @@ namespace CRM_Morcaffein.winforms.Views
 
                 sidebarPanel.Controls.Add(btn);
                 y += buttonHeight + gap;
+            }
+
+            // If no nav items rendered at all (tenant has no plan, or plan
+            // includes nothing useful for this role), show an explanatory
+            // message in the content area.
+            if (navItems.Count == 0)
+            {
+                contentPanel.Controls.Clear();
+                var msg = new Label
+                {
+                    Text = "No subscription — contact the platform operator.",
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Font = BrandPalette.BrandFontRegular(11f),
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                };
+                contentPanel.Controls.Add(msg);
             }
         }
 

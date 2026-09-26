@@ -22,6 +22,38 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("CRM_Morcaffein.domain.entities.Branch", b =>
+                {
+                    b.Property<int>("BranchId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("BranchId"));
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("BranchName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("BranchId");
+
+                    b.ToTable("Branches");
+                });
+
             modelBuilder.Entity("CRM_Morcaffein.domain.entities.Campaign", b =>
                 {
                     b.Property<int>("CampaignId")
@@ -29,6 +61,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CampaignId"));
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -82,6 +117,13 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)")
+                        .HasDefaultValue("");
+
                     b.Property<int?>("RequiredProductId")
                         .HasColumnType("int");
 
@@ -104,6 +146,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("datetime2");
 
                     b.HasKey("CampaignId");
+
+                    b.HasIndex("BranchId");
 
                     b.HasIndex("DecidedBy");
 
@@ -257,6 +301,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("EmployeeId"));
 
+                    b.Property<int?>("BranchId")
+                        .HasColumnType("int");
+
                     b.Property<string>("ContactNumber")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -288,6 +335,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
                     b.HasKey("EmployeeId");
 
+                    b.HasIndex("BranchId");
+
                     b.ToTable("Employees");
                 });
 
@@ -298,6 +347,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("TicketId"));
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
 
                     b.Property<string>("Category")
                         .IsRequired()
@@ -349,6 +401,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
                     b.HasKey("TicketId");
 
+                    b.HasIndex("BranchId");
+
                     b.HasIndex("CustomerId");
 
                     b.HasIndex("DecidedBy");
@@ -367,6 +421,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OrderId"));
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -415,6 +472,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("datetime2");
 
                     b.HasKey("OrderId");
+
+                    b.HasIndex("BranchId");
 
                     b.HasIndex("CreatedBy");
 
@@ -936,6 +995,12 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
             modelBuilder.Entity("CRM_Morcaffein.domain.entities.Campaign", b =>
                 {
+                    b.HasOne("CRM_Morcaffein.domain.entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("CRM_Morcaffein.domain.entities.Employee", "Decider")
                         .WithMany()
                         .HasForeignKey("DecidedBy")
@@ -958,6 +1023,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.HasOne("CRM_Morcaffein.domain.entities.Product", "RewardProduct")
                         .WithMany()
                         .HasForeignKey("RewardProductId");
+
+                    b.Navigation("Branch");
 
                     b.Navigation("Creator");
 
@@ -998,8 +1065,24 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Navigation("Employee");
                 });
 
+            modelBuilder.Entity("CRM_Morcaffein.domain.entities.Employee", b =>
+                {
+                    b.HasOne("CRM_Morcaffein.domain.entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Branch");
+                });
+
             modelBuilder.Entity("CRM_Morcaffein.domain.entities.Feedback", b =>
                 {
+                    b.HasOne("CRM_Morcaffein.domain.entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("CRM_Morcaffein.domain.entities.Customer", "Customer")
                         .WithMany("Feedbacks")
                         .HasForeignKey("CustomerId")
@@ -1021,6 +1104,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("Branch");
+
                     b.Navigation("Customer");
 
                     b.Navigation("DecidedByEmployee");
@@ -1030,6 +1115,12 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
             modelBuilder.Entity("CRM_Morcaffein.domain.entities.Order", b =>
                 {
+                    b.HasOne("CRM_Morcaffein.domain.entities.Branch", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("CRM_Morcaffein.domain.entities.Employee", "Employee")
                         .WithMany()
                         .HasForeignKey("CreatedBy")
@@ -1045,6 +1136,8 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.HasOne("CRM_Morcaffein.domain.entities.Employee", null)
                         .WithMany("OrdersCreated")
                         .HasForeignKey("EmployeeId");
+
+                    b.Navigation("Branch");
 
                     b.Navigation("Customer");
 

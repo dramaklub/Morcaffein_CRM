@@ -33,6 +33,16 @@ public class Campaign : BaseEntity
 
     public int MadeBy { get; set; }
 
+    /// <summary>
+    /// Why this campaign exists — free text from the Manager at creation/edit time.
+    /// Required on new campaigns so the Admin has justification to review during
+    /// approval. Distinct from DecisionNotes, which is the Admin's response.
+    /// </summary>
+    public string Reason { get; set; } = string.Empty;
+
+    public int BranchId { get; set; }
+    public virtual Branch? Branch { get; set; }
+
     public string Status { get; set; } = "Active";
     public int? DecidedBy { get; set; }
     public DateTime? DecidedAt { get; set; }

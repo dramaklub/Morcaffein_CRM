@@ -4,6 +4,7 @@ public class CreateCampaignRequest
 {
     public string PromoName { get; set; } = string.Empty;
     public string PromoCategory { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
 
     /// <summary>"Percentage", "FixedAmount", or "B1T1".</summary>
     public string DiscountType { get; set; } = "Percentage";
@@ -29,12 +30,20 @@ public class CreateCampaignRequest
 
     /// <summary>The Manager creating or updating the campaign.</summary>
     public int MadeBy { get; set; }
+
+    /// <summary>
+    /// Branch this campaign belongs to. Non-null because BranchId is NOT NULL
+    /// on the Campaigns table today. Phase 3 makes this nullable so "all branches"
+    /// campaigns become valid — at which point the type changes to int?.
+    /// </summary>
+    public int BranchId { get; set; }
 }
 
 public class UpdateCampaignRequest
 {
     public string PromoName { get; set; } = string.Empty;
     public string PromoCategory { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
     public string DiscountType { get; set; } = "Percentage";
     public decimal DiscountValue { get; set; }
     public string TargetTier { get; set; } = "All";
@@ -48,4 +57,11 @@ public class UpdateCampaignRequest
 
     /// <summary>The Manager making the edit. Used only for a role check, not stored.</summary>
     public int MadeBy { get; set; }
+
+    /// <summary>
+    /// Branch this campaign belongs to. Non-null because BranchId is NOT NULL
+    /// on the Campaigns table today. Phase 3 makes this nullable so "all branches"
+    /// campaigns become valid — at which point the type changes to int?.
+    /// </summary>
+    public int BranchId { get; set; }
 }

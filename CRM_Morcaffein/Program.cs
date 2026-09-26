@@ -32,19 +32,35 @@ namespace CRM_Morcaffein
                 catch { }
             });
 
-            // Loop: show login, then main, until the user closes the login window.
+            // Loop: show login, then the appropriate shell, until the user
+            // closes the login window. Two shells exist — FrmMain for regular
+            // staff (Barista/Manager/Admin) and FrmSuperAdminMain for platform
+            // operators. FrmLogin sets ApiConfig.IsSuperAdminSession to tell
+            // us which one to open.
             while (true)
             {
                 using var login = new FrmLogin();
                 if (login.ShowDialog() != DialogResult.OK)
                     return;   // user closed login — exit
 
-                var main = new FrmMain();
-                Application.Run(main);
+                bool closedViaLogout;
 
-                // If the user closed FrmMain via the X button, exit the app.
+                if (ApiConfig.IsSuperAdminSession)
+                {
+                    var superShell = new FrmSuperAdminMain();
+                    Application.Run(superShell);
+                    closedViaLogout = superShell.ClosedViaLogout;
+                }
+                else
+                {
+                    var main = new FrmMain();
+                    Application.Run(main);
+                    closedViaLogout = main.ClosedViaLogout;
+                }
+
+                // If the user closed the shell via the X button, exit the app.
                 // If they clicked Logout, loop back to the login screen.
-                if (!main.ClosedViaLogout)
+                if (!closedViaLogout)
                     return;
             }
         }

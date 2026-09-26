@@ -26,8 +26,8 @@ namespace CRM_Morcaffein.infrastructure.data
             //    "MultipleActiveResultSets=True;";
 
             const string connectionString =
-                "Server=(localdb)\\MSSQLLocalDB;" +
-                "Database=CRM_Morcaffein_TenantCrm;" +
+                "Server=(localdb)\\CRM_TenantA;" +
+                "Database=CRM_Morcaffein_TenantA;" +
                 "Trusted_Connection=True;" +
                 "TrustServerCertificate=True;" +
                 "MultipleActiveResultSets=True;";

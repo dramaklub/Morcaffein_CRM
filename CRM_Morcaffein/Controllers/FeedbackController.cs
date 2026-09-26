@@ -34,6 +34,9 @@ namespace CRM_Morcaffein.Controllers
                 Rating = rating,
                 Category = category,
                 StaffNotes = staffNotes,
+                BranchId = Session.EmployeeSession.Current?.CurrentBranchId
+             ?? Session.EmployeeSession.Current?.Employee.BranchId
+             ?? 1,
             };
             return _feedbackApi.LogFeedbackAsync(request);
         }

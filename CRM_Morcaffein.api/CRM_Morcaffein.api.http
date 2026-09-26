@@ -5,34 +5,111 @@ Accept: application/json
 
 ###
 
-GET http://localhost:5035/tenant/1/customers
+### Reach master -> resolve tenant A -> hit Tenant A's DB
+GET http://localhost:5035/test-tenant/3
 Accept: application/json
-
 ###
 
-###
-
-POST {{CRM_Morcaffein.api_HostAddress}}/company-databases
+### SuperAdmin login
+# @name saLogin
+POST http://localhost:5035/api/superadmin/auth/login
 Content-Type: application/json
 
+{
+  "username": "superadmin",
+  "password": "password123"
+}
 
+### List companies
+GET http://localhost:5035/api/superadmin/companies
+Authorization: Bearer {{saLogin.response.body.$.token}}
+
+### List plans
+GET http://localhost:5035/api/superadmin/plans
+Authorization: Bearer {{saLogin.response.body.$.token}}
+
+### Tenant A — full seed
+POST http://localhost:5035/api/tenant/1/dev/seed
+
+### Tenant B — minimal seed
+POST http://localhost:5035/api/tenant/2/dev/seed?customers=10&orders=30
+
+### Tenant C — minimal seed
+POST http://localhost:5035/api/tenant/3/dev/seed?customers=10&orders=30
+
+### List employees
+GET http://localhost:5035/api/tenant/1/employees?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+### List employees in Tenant A
+GET http://localhost:5035/api/tenant/1/employees?page=1&pageSize=20
+Authorization: Bearer {{login.response.body.$.token}}
+
+###
+
+POST http://localhost:5035/api/superadmin/companies/1/assign-plan
+Authorization: Bearer {{saLogin.response.body.$.token}}
+Content-Type: application/json
 
 {
-
- "CompanyId": 1,
- "ServerName": "db67068.public.databaseasp.net",
- "DatabaseName": "db67068",
- "IsActive": true
-
+  "planId": 3,
+  "termsAcceptedBy": "Platform Operator"
 }
 
 ###
 
-GET {{CRM_Morcaffein.api_HostAddress}}/test-tenant/1
-Accept: application/json
+### List subscriptions for Company 1
+GET http://localhost:5035/api/superadmin/companies/1/subscriptions
+Authorization: Bearer {{saLogin.response.body.$.token}}
+
+### Upgrade to Full (assign Basic first, then Full, to see the history)
+POST http://localhost:5035/api/superadmin/companies/1/assign-plan
+Authorization: Bearer {{saLogin.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "planId": 1,
+  "termsAcceptedBy": "Platform Operator"
+}
 
 ###
-### 
+
+POST http://localhost:5035/api/superadmin/companies/1/assign-plan
+Authorization: Bearer {{saLogin.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "planId": 3,
+  "termsAcceptedBy": "Platform Operator"
+}
+
+###
+
+### Now subscriptions should show 3 rows: Full (initial), Basic (superseded), Full (current)
+GET http://localhost:5035/api/superadmin/companies/1/subscriptions
+Authorization: Bearer {{saLogin.response.body.$.token}}
+
+### Manager Login
+# @name login
+POST http://localhost:5035/api/tenant/1/auth/login
+Content-Type: application/json
+
+{
+  "username": "deshaun.waters",
+  "password": "password123"
+}
+
+### Admin Login
+# @name login
+POST http://localhost:5035/api/tenant/1/auth/login
+Content-Type: application/json
+
+{
+  "username": "briana.watsica",
+  "password": "password123"
+}
+
+### Barista Login
 POST http://localhost:5035/api/tenant/1/auth/login
 Content-Type: application/json
 
@@ -40,22 +117,21 @@ Content-Type: application/json
   "username": "renz.arriola",
   "password": "password123"
 }
-###
-###
 
- POST http://localhost:5035/api/tenant/1/dev/rehash-credentials
-
-### Login and capture token
-# @name login
-POST http://localhost:5035/api/tenant/1/auth/login
+### SuperAdmin login (need a token)
+# @name saLogin
+POST http://localhost:5035/api/superadmin/auth/login
 Content-Type: application/json
 
 {
-  "username": "renz",
-  "password": "password"
+  "username": "superadmin",
+  "password": "password123"
 }
 
-### Use the captured token
-GET http://localhost:5035/api/tenant/1/dashboard/revenue-vs-discounts?days=30
+### Recent employees — Tenant 3
+GET http://localhost:5035/api/tenant/3/dashboard/recent-employees?limit=5
 Authorization: Bearer {{login.response.body.$.token}}
-Accept: application/json
+
+### Recent feedback — Tenant 3
+GET http://localhost:5035/api/tenant/3/dashboard/recent-feedback?limit=5
+Authorization: Bearer {{login.response.body.$.token}}

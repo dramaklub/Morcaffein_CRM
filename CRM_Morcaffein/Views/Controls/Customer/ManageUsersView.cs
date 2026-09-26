@@ -1,7 +1,10 @@
-﻿using CRM_Morcaffein.Controllers;
-using CRM_Morcaffein.api.DTOs;
-using CRM_Morcaffein.Theme;
+﻿using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Session;
+using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services.Api;
+using CRM_Morcaffein.winforms.Views;
+using CRM_Morcaffein.winforms.Views.Controls;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -12,6 +15,11 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// Admin role is NOT shown in the role dropdown — only Barista and Manager. Admins
     /// cannot create other Admins, edit Admins, or deactivate Admins (server enforces
     /// the same rules).
+    ///
+    /// Branch assignment: Baristas must be pinned to a branch; Managers may be
+    /// assigned a specific branch OR left as "All Branches" (null). The dropdown
+    /// toggles between "Branch *" and "Branch (optional)" and adds/removes the
+    /// "All Branches" entry when the Role changes.
     /// </summary>
     public class ManageUsersView : UserControl
     {
@@ -53,6 +61,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private TextBox editContactTxtBx = null!;
         private TextBox editEmailTxtBx = null!;
         private ComboBox editRoleCombo = null!;
+        private Label editBranchLabel = null!;
+        private ComboBox editBranchCombo = null!;
         private TextBox editUsernameTxtBx = null!;
         private Label editErrorLabel = null!;
         private Button editSaveBtn = null!;
@@ -66,13 +76,16 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private Button resetCancelBtn = null!;
         private DrawerMode _mode = DrawerMode.View;
 
+        // Branch list cache — loaded once, refreshed on demand
+        private readonly List<BranchItem> _branchesCache = new();
+        private bool _branchesLoaded;
+
         private enum DrawerMode
         {
             View,
             Edit,
             Reset,
         }
-
 
         public ManageUsersView()
         {
@@ -132,7 +145,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Margin = new Padding(0),
             };
 
-            // Profile labels — fixed positions inside the box
             nameLabel = new Label
             {
                 Location = new Point(16, 16),
@@ -154,11 +166,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Font = BrandPalette.BrandFontRegular(9.5f),
                 ForeColor = BrandPalette.NeutralText,
             };
-            // usernameLabel is no longer shown in the view state (the grid already has a
-            // Username column, and the drawer shouldn't duplicate it). The field still
-            // exists on the class so older references compile — it's just never added to
-            // the box and never populated. If you'd rather fully delete the field, remove
-            // its declaration at the top and the `usernameLabel` line in RefreshDrawer.
             lastLoginLabel = new Label
             {
                 Location = new Point(16, 98),
@@ -174,7 +181,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 ForeColor = BrandPalette.NeutralText,
             };
 
-            // Divider line between profile info and buttons/edit fields
             var dividerLine = new Panel
             {
                 Location = new Point(16, 156),
@@ -182,7 +188,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 BackColor = BrandPalette.Border,
             };
 
-            // Action buttons (view state) — shown below the divider.
             editBtn = MakeActionButton("Edit Information", 176);
             editBtn.Click += (s, e) => EnterEditState();
 
@@ -197,8 +202,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             ButtonStyler.TrackEnabledState(resetPasswordBtn);
             ButtonStyler.TrackEnabledState(deactivateBtn);
 
-            // Inline edit + reset panels (edit/reset states) — occupy the same vertical
-            // slot as the three action buttons. Both hidden by default.
             editPanel = BuildEditPanel();
             editPanel.Visible = false;
 
@@ -206,8 +209,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             resetPanel.Visible = false;
 
             combinedBox.Controls.Add(resetPanel);
-            combinedBox.Controls.Add(editPanel);
-
             combinedBox.Controls.Add(editPanel);
             combinedBox.Controls.Add(deactivateBtn);
             combinedBox.Controls.Add(resetPasswordBtn);
@@ -290,8 +291,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             {
                 _selectedEmployee = employeesGrid.CurrentRow?.DataBoundItem as EmployeeResponseDto;
 
-                // If the user was editing or resetting and clicks a different row, abandon
-                // silently rather than carrying stale input into a different employee.
                 if (_mode != DrawerMode.View)
                     ExitToViewState();
 
@@ -307,7 +306,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             bodyPanel.Controls.Add(drawerPanel);
             Controls.Add(bodyPanel);
 
-            // Initial position; also triggered on resize.
             newEmployeeBtn.Left = 300;
         }
 
@@ -316,15 +314,12 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             if (employeesGrid.Rows[e.RowIndex].DataBoundItem is not EmployeeResponseDto emp)
                 return;
 
-            // Render the IsActive column as a readable label instead of the raw bool.
             if (employeesGrid.Columns[e.ColumnIndex].Name == nameof(EmployeeResponseDto.IsActive))
             {
                 e.Value = emp.IsActive ? "Active" : "Inactive";
                 e.FormattingApplied = true;
             }
 
-            // Mute the entire row when the employee is deactivated. Neutral greys (not
-            // brand-tinted) so the muted state reads clearly against the white grid.
             if (!emp.IsActive)
             {
                 var greyText = Color.FromArgb(255, 130, 130, 130);
@@ -336,13 +331,11 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 e.CellStyle.SelectionBackColor = greyBackground;
             }
         }
+
         /// <summary>
-        /// The inline edit form. Laid out with absolute positions inside a Panel whose
-        /// height is the sum of its content. Sits inside combinedBox at y=176 (where the
-        /// three action buttons also live), so entering edit state hides those buttons and
-        /// shows this panel.
-        ///
-        /// Fields are prefilled in EnterEditState() from the currently selected employee.
+        /// The inline edit form. Fields are prefilled in EnterEditState() from the
+        /// currently selected employee. Layout is absolute-positioned inside a fixed
+        /// panel whose height is computed at the end.
         /// </summary>
         private Panel BuildEditPanel()
         {
@@ -355,7 +348,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             {
                 Location = new Point(14, 176),
                 Width = 312,
-                Height = 6 * rowHeight + 80,   // 6 rows + Save/Cancel + error label space
+                Height = 7 * rowHeight + 80,   // 7 rows (added Branch) + Save/Cancel + error
                 BackColor = BrandPalette.SurfaceCard,
             };
 
@@ -397,7 +390,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             editContactTxtBx = MakeRow("Contact number * (10-11 digits)", digitsOnly: true);
             editEmailTxtBx = MakeRow("Email (optional)");
 
-            // Role row — label + combo.
+            // ---- Role row ----
             var roleLabel = new Label
             {
                 Text = "Role *",
@@ -414,13 +407,34 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Font = BrandPalette.BrandFontRegular(9.5f),
             };
             editRoleCombo.Items.AddRange(new object[] { "Barista", "Manager" });
+            editRoleCombo.SelectedIndexChanged += (s, e) => UpdateEditBranchDropdownState();
             panel.Controls.Add(editRoleCombo);
             panel.Controls.Add(roleLabel);
             y += rowHeight;
 
+            // ---- Branch row ----
+            editBranchLabel = new Label
+            {
+                Text = "Branch *",
+                Location = new Point(0, y),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+            editBranchCombo = new ComboBox
+            {
+                Location = new Point(0, y + labelHeight),
+                Size = new Size(fieldWidth, fieldHeight),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+            };
+            panel.Controls.Add(editBranchCombo);
+            panel.Controls.Add(editBranchLabel);
+            y += rowHeight;
+
             editUsernameTxtBx = MakeRow("Username * (min 3 chars)");
 
-            // Error label — sits between the last field and the buttons.
+            // Error label
             editErrorLabel = new Label
             {
                 Location = new Point(0, y),
@@ -432,7 +446,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             panel.Controls.Add(editErrorLabel);
             y += 28;
 
-            // Save / Cancel row.
+            // Save / Cancel row
             editSaveBtn = new Button
             {
                 Text = "Save Changes",
@@ -464,16 +478,95 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             panel.Controls.Add(editSaveBtn);
             panel.Controls.Add(editCancelBtn);
 
-            // The panel's actual height is now known — set it so combinedBox can grow to fit.
             panel.Height = y + 32;
             return panel;
         }
 
         /// <summary>
-        /// Switches combinedBox from "view" state to "edit" state:
-        ///   - Hides the three action buttons
-        ///   - Shows the edit panel, prefilled from the selected employee
-        ///   - Grows combinedBox to fit the edit panel
+        /// Loads the tenant's branch list once, caches it, and refreshes the edit
+        /// dropdown. Called before entering edit state.
+        /// </summary>
+        private void EnsureBranchesLoaded()
+        {
+            if (_branchesLoaded) return;
+            _branchesLoaded = true;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var api = new BranchApi();
+                    var branches = await api.GetBranchesAsync();
+
+                    _branchesCache.Clear();
+                    foreach (var b in branches)
+                        _branchesCache.Add(new BranchItem(b.BranchId, b.BranchName));
+
+                    if (IsHandleCreated)
+                        BeginInvoke(new Action(UpdateEditBranchDropdownState));
+                }
+                catch
+                {
+                    // Silently ignore — dropdown stays empty and user gets a
+                    // clear server-side error if they try to save without a branch.
+                }
+            });
+        }
+
+        /// <summary>
+        /// Rebuilds the branch dropdown based on the currently-selected role.
+        /// Baristas: no "All Branches" entry. Managers: "All Branches" is first.
+        /// Preserves previous selection if it survives the rebuild.
+        /// </summary>
+        private void UpdateEditBranchDropdownState()
+        {
+            if (editBranchCombo is null || editBranchLabel is null || editRoleCombo is null)
+                return;
+
+            var role = editRoleCombo.SelectedItem as string ?? "Barista";
+            var isBarista = role.Equals("Barista", StringComparison.OrdinalIgnoreCase);
+
+            editBranchLabel.Text = isBarista ? "Branch *" : "Branch (optional)";
+
+            var previousSelection = editBranchCombo.SelectedItem as BranchItem;
+
+            editBranchCombo.Items.Clear();
+
+            if (!isBarista)
+                editBranchCombo.Items.Add(new BranchItem(null, "All Branches"));
+
+            foreach (var b in _branchesCache)
+                editBranchCombo.Items.Add(b);
+
+            // Preserve previous selection if possible
+            if (previousSelection is not null)
+            {
+                for (int i = 0; i < editBranchCombo.Items.Count; i++)
+                {
+                    if (editBranchCombo.Items[i] is BranchItem bi &&
+                        bi.BranchId == previousSelection.BranchId)
+                    {
+                        editBranchCombo.SelectedIndex = i;
+                        return;
+                    }
+                }
+            }
+
+            if (editBranchCombo.Items.Count > 0)
+                editBranchCombo.SelectedIndex = 0;
+        }
+
+        private sealed class BranchItem
+        {
+            public int? BranchId { get; }
+            public string Display { get; }
+            public BranchItem(int? id, string display) { BranchId = id; Display = display; }
+            public override string ToString() => Display;
+        }
+
+        /// <summary>
+        /// Switches combinedBox from "view" to "edit" state and prefills every field
+        /// from the selected employee.
         /// </summary>
         private void EnterEditState()
         {
@@ -490,6 +583,21 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             var roleIndex = editRoleCombo.Items.IndexOf(emp.Role);
             editRoleCombo.SelectedIndex = roleIndex >= 0 ? roleIndex : 0;
 
+            // Load branches (once per view) and rebuild the dropdown for the current role.
+            EnsureBranchesLoaded();
+            UpdateEditBranchDropdownState();
+
+            // Preselect the employee's current branch. For null (all-branch Manager),
+            // picks the "All Branches" entry — which only exists if role is Manager.
+            for (int i = 0; i < editBranchCombo.Items.Count; i++)
+            {
+                if (editBranchCombo.Items[i] is BranchItem bi && bi.BranchId == emp.BranchId)
+                {
+                    editBranchCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+
             editErrorLabel.Text = string.Empty;
 
             editBtn.Visible = false;
@@ -498,16 +606,11 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             editPanel.Visible = true;
             resetPanel.Visible = false;
 
-            // Grow the box: edit panel top is y=176 inside combinedBox, plus panel height,
-            // plus a 14px bottom inset.
             combinedBox.Height = 176 + editPanel.Height + 14;
 
             _mode = DrawerMode.Edit;
         }
 
-        /// <summary>
-        /// Reverts combinedBox to "view" state. Called on Cancel and after a successful Save.
-        /// </summary>
         /// <summary>
         /// Reverts combinedBox to "view" state. Called on Cancel and after a successful
         /// Save from either the edit panel or the reset panel.
@@ -559,6 +662,17 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 return;
             }
 
+            // ---- Branch validation ----
+            var newRole = editRoleCombo.SelectedItem as string ?? "Barista";
+            var isBarista = newRole.Equals("Barista", StringComparison.OrdinalIgnoreCase);
+            int? branchId = (editBranchCombo.SelectedItem as BranchItem)?.BranchId;
+
+            if (isBarista && branchId is null)
+            {
+                editErrorLabel.Text = "Baristas must be assigned to a branch.";
+                return;
+            }
+
             try
             {
                 editSaveBtn.Enabled = false;
@@ -569,8 +683,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                     editLastNameTxtBx.Text,
                     editContactTxtBx.Text,
                     string.IsNullOrWhiteSpace(editEmailTxtBx.Text) ? null : editEmailTxtBx.Text,
-                    editRoleCombo.SelectedItem as string ?? "Barista",
-                    newUsername);
+                    newRole,
+                    newUsername,
+                    branchId);
 
                 ExitToViewState();
                 Toast.Show(this, $"Saved changes to {_selectedEmployee.FullName}.", ToastKind.Success);
@@ -585,10 +700,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 editSaveBtn.Enabled = true;
             }
         }
+
         /// <summary>
-        /// The inline reset-password form. Two password fields + Save/Cancel, prefilled
-        /// empty. Sits at the same y-offset as the edit panel and the three action buttons,
-        /// so entering reset state hides those and shows this panel instead.
+        /// The inline reset-password form.
         /// </summary>
         private Panel BuildResetPanel()
         {
@@ -607,9 +721,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             int y = 0;
 
-            // Both helpers add their control to the panel — a local function that only
-            // *constructs* a Label and returns it would orphan the label with no parent,
-            // which is why they weren't rendering.
             void AddLabel(string text, int yPos)
             {
                 var label = new Label
@@ -644,7 +755,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             AddLabel("Confirm new password *", y);
             resetConfirmPasswordTxtBx = MakePwdBox();
 
-            // Error label
             resetErrorLabel = new Label
             {
                 Location = new Point(0, y),
@@ -656,7 +766,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             panel.Controls.Add(resetErrorLabel);
             y += 28;
 
-            // Save / Cancel row
             resetSaveBtn = new Button
             {
                 Text = "Reset Password",
@@ -692,10 +801,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             return panel;
         }
 
-        /// <summary>
-        /// Enters reset-password state: hides the three buttons, shows the reset panel,
-        /// grows the box.
-        /// </summary>
         private void EnterResetState()
         {
             if (_selectedEmployee is null) return;
@@ -910,14 +1015,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             statusLabel.Text = emp.IsActive ? "Active" : "Inactive";
             statusLabel.ForeColor = emp.IsActive ? BrandPalette.StatusPositiveText : BrandPalette.StatusNegativeFill;
 
-            // Two independent reasons to lock down an employee:
-            //   1. The row is an Admin/SuperAdmin — the server blocks all edits to those.
-            //   2. The employee is deactivated — only the reactivate action is allowed.
-            //
-            // For an Admin row: everything is disabled, including the deactivate/reactivate
-            // toggle, since the server blocks even that.
-            // For a non-Admin inactive row: Edit and Reset Password are disabled, but the
-            // toggle stays enabled so the Manager can reactivate.
             var isAdminRow = emp.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                  emp.Role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase);
             var isInactive = !emp.IsActive;
@@ -943,7 +1040,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             {
                 _ = ReloadAsync();
             }
-        }   
+        }
 
         private async void DeactivateSelected()
         {

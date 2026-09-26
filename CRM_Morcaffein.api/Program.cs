@@ -15,13 +15,18 @@ var builder = WebApplication.CreateBuilder(args);
 // connection attempt just fails with "the specified LocalDB instance does not exist"
 // unless something has already started it. Ensure it's running before EF ever tries to
 // connect, so this doesn't depend on remembering a manual "sqllocaldb start" step.
-EnsureLocalDbInstanceStarted(builder.Configuration.GetConnectionString("LocalMasterCrm"));
-
-static void EnsureLocalDbInstanceStarted(string? connectionString)
+// Start all LocalDB instances we might talk to. Named instances don't auto-start
+// on cold connection, so a fresh run against TenantB would fail without this.
+foreach (var instance in new[] { "CRM_Master", "CRM_TenantA", "CRM_TenantB", "CRM_TenantC" })
 {
-    if (string.IsNullOrWhiteSpace(connectionString)) return;
+    EnsureLocalDbInstanceStarted($"(localdb)\\{instance}");
+}
 
-    var match = Regex.Match(connectionString, @"\(localdb\)\\([^;]+)", RegexOptions.IgnoreCase);
+static void EnsureLocalDbInstanceStarted(string? connectionStringOrInstance)
+{
+    if (string.IsNullOrWhiteSpace(connectionStringOrInstance)) return;
+
+    var match = Regex.Match(connectionStringOrInstance, @"\(localdb\)\\([^;]+)", RegexOptions.IgnoreCase);
     if (!match.Success) return;
 
     var instanceName = match.Groups[1].Value;
@@ -41,18 +46,13 @@ static void EnsureLocalDbInstanceStarted(string? connectionString)
     }
     catch
     {
-        // Best-effort — if sqllocaldb.exe isn't on PATH or the instance is already
-        // running, the subsequent EF connection attempt will surface any real problem.
+        // Best-effort.
     }
 }
 
 builder.Services.AddDbContext<MasterCrmDbContext>(options =>
   options.UseSqlServer(
     builder.Configuration.GetConnectionString("LocalMasterCrm")));
-
-builder.Services.AddDbContext<TenantCrmDbContext>(options =>
-  options.UseSqlServer(
-    builder.Configuration.GetConnectionString("LocalTenantCrm")));
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

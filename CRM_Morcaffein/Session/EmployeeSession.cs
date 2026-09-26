@@ -1,3 +1,4 @@
+using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.domain.entities;
 
 namespace CRM_Morcaffein.Session
@@ -30,5 +31,33 @@ namespace CRM_Morcaffein.Session
 
         public int EmployeeId => Employee.EmployeeId;
         public string DisplayName => Employee.FullName;
+
+        /// <summary>
+        /// The tenant's entitlements (module list) for the current session.
+        /// Populated once at login by FrmLogin. Null until that runs, or if
+        /// the login flow failed to fetch them.
+        /// </summary>
+        public EntitlementsResponseDto? Entitlements { get; set; }
+
+        /// <summary>
+        /// True if the tenant's plan includes the given module key.
+        /// Module keys: "Transactions", "DataCollection", "Feedback",
+        /// "Dashboard", "BusinessIntelligence", "Actions", "Branching".
+        ///
+        /// If Entitlements is null (not loaded yet, or failed to load),
+        /// returns false — conservative default, so a failed fetch doesn't
+        /// accidentally grant full access.
+        /// </summary>
+        public bool HasModule(string moduleKey)
+        {
+            if (Entitlements?.Modules is null) return false;
+            return Entitlements.Modules.Contains(moduleKey, StringComparer.OrdinalIgnoreCase);
+        }
+        /// <summary>
+        /// The branch the current user is looking at. Set by the topbar selector in
+        /// FrmMain. null = "All Branches" (company-wide view). Baristas are pinned to
+        /// their own branch and never see the selector.
+        /// </summary>
+        public int? CurrentBranchId { get; set; }
     }
 }

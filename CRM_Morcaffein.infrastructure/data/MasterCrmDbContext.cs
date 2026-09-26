@@ -11,6 +11,11 @@ namespace CRM_Morcaffein.infrastructure.data
         public DbSet<Company> Companies => Set<Company>();
         public DbSet<CompanyDatabase> CompanyDatabases => Set<CompanyDatabase>();
         public DbSet<Device> Devices => Set<Device>();
+        public DbSet<Plan> Plans => Set<Plan>();
+        public DbSet<Subscription> Subscriptions => Set<Subscription>();
+        public DbSet<CompanyUser> CompanyUsers => Set<CompanyUser>();
+        public DbSet<SuperAdmin> SuperAdmins => Set<SuperAdmin>();
+
 
         public MasterCrmDbContext(DbContextOptions<MasterCrmDbContext> options) : base(options)
         { }
@@ -53,6 +58,11 @@ namespace CRM_Morcaffein.infrastructure.data
                 entity.HasIndex(x => x.CompanyCode)
 
                   .IsUnique();
+
+                entity.HasOne(c => c.CurrentPlan)
+                  .WithMany()
+                  .HasForeignKey(c => c.CurrentPlanId)
+                  .OnDelete(DeleteBehavior.Restrict);
 
             });
 
@@ -111,6 +121,91 @@ namespace CRM_Morcaffein.infrastructure.data
                 .IsUnique();
 
             });
+
+            builder.Entity<Plan>(entity =>
+            {
+                entity.HasKey(p => p.PlanId);
+
+                entity.Property(p => p.Name)
+                      .HasMaxLength(50)
+                      .IsRequired();
+
+                entity.Property(p => p.Description)
+                      .HasMaxLength(250);
+
+                entity.Property(p => p.ModulesCsv)
+                      .HasMaxLength(500)
+                      .IsRequired();
+
+                entity.Property(p => p.MonthlyPrice)
+                      .HasPrecision(18, 2);
+
+                entity.HasIndex(p => p.Name)
+                        .IsUnique();
+            });
+
+            builder.Entity<Subscription>(entity =>
+            {
+                entity.HasKey(s => s.SubscriptionId);
+
+                entity.Property(s => s.TermsAcceptedBy)
+                      .HasMaxLength(200);
+
+                entity.HasOne(s => s.Company)
+                      .WithMany()
+                      .HasForeignKey(s => s.CompanyId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(s => s.Plan)
+                      .WithMany()
+                      .HasForeignKey(s => s.PlanId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                // Index on CompanyId because the "get current subscription for
+                // company N" query is the most common one.
+                entity.HasIndex(s => s.CompanyId);
+            });
+
+            builder.Entity<SuperAdmin>(entity =>
+            {
+                entity.HasKey(s => s.SuperAdminId);
+
+                entity.Property(s => s.Username)
+                      .HasMaxLength(50)
+                      .IsRequired();
+
+                entity.Property(s => s.PasswordHash)
+                      .HasMaxLength(200)
+                      .IsRequired();
+
+                entity.Property(s => s.FullName)
+                      .HasMaxLength(200);
+
+                entity.Property(s => s.Email)
+                      .HasMaxLength(200);
+
+                entity.HasIndex(s => s.Username)
+                      .IsUnique();
+            });
+
+            builder.Entity<CompanyUser>(entity =>
+            {
+                entity.HasKey(cu => cu.CompanyUserId);
+
+                entity.Property(cu => cu.Username)
+                      .HasMaxLength(50)
+                      .IsRequired();
+
+                entity.HasIndex(cu => cu.Username)
+                      .IsUnique();
+
+                entity.HasOne(cu => cu.Company)
+                      .WithMany()
+                      .HasForeignKey(cu => cu.CompanyId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+
         }
 
     }

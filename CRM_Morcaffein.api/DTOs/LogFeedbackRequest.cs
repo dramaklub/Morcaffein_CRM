@@ -7,4 +7,6 @@ public class LogFeedbackRequest
     public int Rating { get; set; }
     public string Category { get; set; } = string.Empty;
     public string StaffNotes { get; set; } = string.Empty;
+
+    public int BranchId { get; set; }
 }

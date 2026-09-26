@@ -13,7 +13,7 @@ namespace CRM_Morcaffein.infrastructure.data
         public MasterCrmDbContext CreateDbContext(string[] args)
         {
             const string connectionString =
-                "Server=(localdb)\\MSSQLLocalDB;" +
+                "Server=(localdb)\\CRM_Master;" +
                 "Database=CRM_Morcaffein_MasterCrm;" +
                 "Trusted_Connection=True;" +
                 "TrustServerCertificate=True;" +

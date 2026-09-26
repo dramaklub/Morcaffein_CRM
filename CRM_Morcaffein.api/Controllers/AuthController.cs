@@ -98,6 +98,7 @@ namespace CRM_Morcaffein.api.Controllers
                 CompanyId = companyId,
                 Role = employee.Role,
                 FullName = employee.FullName,
+                BranchId = employee.BranchId,
                 ExpiresAt = expiresAt,
             });
         }

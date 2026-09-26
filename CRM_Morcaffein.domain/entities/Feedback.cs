@@ -18,6 +18,9 @@ public class Feedback : BaseEntity
     public DateTime? DecidedAt { get; set; }
     public string? DecisionNotes { get; set; }
 
+    public int BranchId { get; set; }
+    public virtual Branch? Branch { get; set; }
+
     public virtual Customer? Customer { get; set; }
     public virtual Employee? LoggedByEmployee { get; set; }
     public virtual Employee? DecidedByEmployee { get; set; }

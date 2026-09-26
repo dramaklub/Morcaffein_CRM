@@ -8,6 +8,10 @@ public class Employee : BasePerson
     public string Role { get; set; } = "Barista";
 
     public virtual Credential? Credential { get; set; }
+
+    public int? BranchId { get; set; }
+    public virtual Branch? Branch { get; set; }
+
     public virtual ICollection<Order> OrdersCreated { get; set; } = new List<Order>();
     public virtual ICollection<Campaign> CampaignsCreated { get; set; } = new List<Campaign>();
     public virtual ICollection<Feedback> FeedbacksLogged { get; set; } = new List<Feedback>();

@@ -40,6 +40,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         // Drawer content controls
         private Label _campaignNameLabel = null!;
         private Label _campaignMetaLabel = null!;
+        private Label _reasonCaptionLabel = null!;
+        private Label _reasonValueLabel = null!;
         private Label _detailCategoryLabel = null!;
         private Label _detailDiscountLabel = null!;
         private Label _detailTierLabel = null!;
@@ -65,7 +67,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         // ---- Drawer metrics ----
         private const int DrawerWidth = 420;
         private const int DetailBoxWidth = 340;
-        private const int DetailBoxHeight = 400;
+        private const int DetailBoxHeight = 470;
         private const int DecisionPanelWidth = 340;
         private const int DecisionPanelHeight = 200;
         private const int DrawerInsetX = 18;
@@ -293,8 +295,30 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 BackColor = Color.Transparent,
             };
 
+            // Reason sits above the field list — it's the Manager's justification,
+            // and the Admin should read it before anything else in the campaign.
+            _reasonCaptionLabel = new Label
+            {
+                Text = "Reason",
+                Location = new Point(DrawerInsetX, 76),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontBold(8.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = Color.Transparent,
+            };
+
+            _reasonValueLabel = new Label
+            {
+                Location = new Point(DrawerInsetX, 94),
+                MaximumSize = new Size(DetailBoxWidth - DrawerInsetX * 2, 0),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+
             // Field rows, each spaced DetailRowSpacing apart, starting below the meta line.
-            var fieldTop = 84;
+            var fieldTop = 154;
             _detailCategoryLabel = MakeDetailLabel(DrawerInsetX, fieldTop);
             _detailDiscountLabel = MakeDetailLabel(DrawerInsetX, fieldTop + DetailRowSpacing * 1);
             _detailTierLabel = MakeDetailLabel(DrawerInsetX, fieldTop + DetailRowSpacing * 2);
@@ -307,6 +331,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             box.Controls.Add(_campaignNameLabel);
             box.Controls.Add(_campaignMetaLabel);
+            box.Controls.Add(_reasonCaptionLabel);
+            box.Controls.Add(_reasonValueLabel);
             box.Controls.Add(_detailCategoryLabel);
             box.Controls.Add(_detailDiscountLabel);
             box.Controls.Add(_detailTierLabel);
@@ -548,6 +574,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             _campaignNameLabel.Text = campaign.PromoName;
             _campaignMetaLabel.Text = FormatDiscount(campaign.DiscountType, campaign.DiscountValue);
+            _reasonValueLabel.Text = string.IsNullOrWhiteSpace(campaign.Reason)
+                ? "(no reason provided)"
+                : campaign.Reason;
 
             _detailCategoryLabel.Text = $"Category: {campaign.PromoCategory}";
             _detailDiscountLabel.Text = $"Discount: {FormatDiscount(campaign.DiscountType, campaign.DiscountValue)}";

@@ -40,14 +40,97 @@ namespace CRM_Morcaffein.winforms.Services.Reports
             return doc;
         }
 
+                /// <summary>
+        /// The raw transactions ledger — one row per completed order, plus a
+        /// summary footer. Both roles can generate this report; it's the raw data
+        /// underneath every other report.
+        /// </summary>
+        public static ReportDocument BuildTransactionLedger(int days, TransactionLedgerDto ledger)
+        {
+            var doc = new ReportDocument
+            {
+                Title = "Morcaffein — Transaction Ledger",
+                Subtitle = "Every completed order in the selected period",
+                PeriodLabel = PeriodLabelFor(days),
+                GeneratedBy = Session.EmployeeSession.Current?.DisplayName ?? "—",
+                GeneratedAt = DateTime.Now,
+            };
+
+            var section = new ReportSection
+            {
+                Heading = "Transactions",
+                Subtitle = ledger.Rows.Count == 0
+                    ? "No completed orders in this period."
+                    : $"{ledger.Rows.Count:N0} orders  ·  ₱{ledger.TotalNet:N0} net revenue  ·  {ledger.TotalPointsEarned:N0} points awarded",
+            };
+
+            if (ledger.Rows.Count == 0)
+            {
+                section.Blocks.Add(new ParagraphBlock { Text = "No orders to list." });
+                doc.Sections.Add(section);
+                return doc;
+            }
+
+            var table = new TableBlock
+            {
+                Columns = { "Date", "Order", "Customer", "Items", "Subtotal", "Discount", "PWD/Sr.", "Net", "Points" },
+            };
+
+            foreach (var r in ledger.Rows)
+            {
+                table.Rows.Add(new[]
+                {
+                    r.OrderDate.ToLocalTime().ToString("MMM d HH:mm"),
+                    $"#{r.OrderId}",
+                    r.CustomerName,
+                    r.ItemCount.ToString("N0"),
+                    $"₱{r.SubTotal:N2}",
+                    r.TotalDiscount > 0 ? $"₱{r.TotalDiscount:N2}" : "—",
+                    r.PwdSeniorDiscount > 0 ? $"₱{r.PwdSeniorDiscount:N2}" : "—",
+                    $"₱{r.NetAmount:N2}",
+                    r.PointsEarned.ToString("N0"),
+                });
+            }
+
+            section.Blocks.Add(table);
+
+            // Summary footer
+            var summary = new TableBlock
+            {
+                Columns = { "Total Orders", "Subtotal", "Discounts", "PWD/Senior", "Net Revenue", "Points Awarded" },
+                Rows =
+                {
+                    new[]
+                    {
+                        ledger.Rows.Count.ToString("N0"),
+                        $"₱{ledger.TotalSubTotal:N2}",
+                        $"₱{ledger.TotalDiscount:N2}",
+                        $"₱{ledger.TotalPwdSenior:N2}",
+                        $"₱{ledger.TotalNet:N2}",
+                        ledger.TotalPointsEarned.ToString("N0"),
+                    }
+                }
+            };
+
+            section.Blocks.Add(new ParagraphBlock
+            {
+                Text = "Totals for the full period:",
+                Muted = true,
+            });
+            section.Blocks.Add(summary);
+
+            doc.Sections.Add(section);
+            return doc;
+        }
+
         public static ReportDocument BuildAdmin(
-    int days,
-    PosDiagnosticsDto pos,
-    CustomerLtvChurnDto ltv,
-    RevenueVsDiscountsDto revDisc,
-    NewVsReturningDto newRet,
-    PeakHoursDto peak,
-    AuditLogSummaryDto audit)
+            int days,
+            PosDiagnosticsDto pos,
+            CustomerLtvChurnDto ltv,
+            RevenueVsDiscountsDto revDisc,
+            NewVsReturningDto newRet,
+            PeakHoursDto peak,
+            AuditLogSummaryDto audit)
         {
             var doc = new ReportDocument
             {

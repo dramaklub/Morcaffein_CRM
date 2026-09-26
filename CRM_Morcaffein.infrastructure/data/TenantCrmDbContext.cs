@@ -21,6 +21,8 @@ public class TenantCrmDbContext : IdentityDbContext
     public DbSet<ProductModifier> ProductModifiers => Set<ProductModifier>();
     public DbSet<OrderItemModifier> OrderItemModifiers => Set<OrderItemModifier>();
     public DbSet<PointAdjustmentRequest> PointAdjustmentRequests => Set<PointAdjustmentRequest>();
+    public DbSet<Branch> Branches => Set<Branch>();
+
 
     public TenantCrmDbContext(DbContextOptions<TenantCrmDbContext> options) : base(options)
     { }
@@ -34,6 +36,14 @@ public class TenantCrmDbContext : IdentityDbContext
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // 0. BRANCH
+        builder.Entity<Branch>(entity =>
+        {
+            entity.HasKey(b => b.BranchId);
+            entity.Property(b => b.BranchName).HasMaxLength(100).IsRequired();
+            entity.Property(b => b.Address).HasMaxLength(250);
+        });
 
         // 1. PRODUCT
         builder.Entity<Product>(entity =>
@@ -109,6 +119,7 @@ public class TenantCrmDbContext : IdentityDbContext
             entity.Property(o => o.TotalDiscount).HasPrecision(18, 2);
             entity.Property(o => o.TotalAmount).HasPrecision(18, 2);
             entity.Property(o => o.PointsEarned).IsRequired();
+            entity.Property(o => o.BranchId).IsRequired();
 
             entity.HasOne(o => o.Customer)
                   .WithMany(c => c.Orders)
@@ -119,6 +130,14 @@ public class TenantCrmDbContext : IdentityDbContext
                   .WithMany()
                   .HasForeignKey(o => o.CreatedBy)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(o => o.Branch)
+                  .WithMany()
+                  .HasForeignKey(o => o.BranchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(o => o.BranchId);
+
         });
 
         // 4. ORDER ITEM
@@ -159,8 +178,10 @@ public class TenantCrmDbContext : IdentityDbContext
             entity.Property(c => c.PromoName).HasMaxLength(200).IsRequired();
             entity.Property(c => c.PromoCategory).HasMaxLength(100).IsRequired();
             entity.Property(c => c.Status).HasMaxLength(50).IsRequired();
+            entity.Property(c => c.Reason).HasMaxLength(250).IsRequired().HasDefaultValue("");
             entity.Property(c => c.DecisionNotes).HasMaxLength(500);
             entity.Property(c => c.DiscountValue).HasPrecision(18, 2);
+            entity.Property(c => c.BranchId).IsRequired();
 
             entity.HasOne(c => c.Creator)
                   .WithMany()
@@ -171,6 +192,13 @@ public class TenantCrmDbContext : IdentityDbContext
                   .WithMany()
                   .HasForeignKey(c => c.DecidedBy)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(c => c.Branch)
+                  .WithMany()
+                  .HasForeignKey(c => c.BranchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(c => c.BranchId);
         });
 
         // 6. CAMPAIGN REDEEM
@@ -197,6 +225,7 @@ public class TenantCrmDbContext : IdentityDbContext
             entity.Property(f => f.Category).HasMaxLength(100);
             entity.Property(f => f.Status).HasMaxLength(50);
             entity.Property(f => f.DecisionNotes).HasMaxLength(500);
+            entity.Property(f => f.BranchId).IsRequired();
 
             entity.HasOne(f => f.Customer)
                   .WithMany(c => c.Feedbacks)
@@ -212,6 +241,13 @@ public class TenantCrmDbContext : IdentityDbContext
                   .WithMany()
                   .HasForeignKey(f => f.DecidedBy)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(f => f.Branch)
+                  .WithMany()
+                  .HasForeignKey(f => f.BranchId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(f => f.BranchId);
         });
 
         // 8. POINT LEDGER
@@ -258,6 +294,15 @@ public class TenantCrmDbContext : IdentityDbContext
             entity.HasOne(r => r.Approver)
                   .WithMany()
                   .HasForeignKey(r => r.ApprovedBy)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Employee>(entity =>
+        {
+            entity.HasKey(e => e.EmployeeId);
+            entity.HasOne(e => e.Branch)
+                  .WithMany()
+                  .HasForeignKey(e => e.BranchId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
     }

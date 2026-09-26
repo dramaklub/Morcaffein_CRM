@@ -50,7 +50,7 @@ namespace CRM_Morcaffein.winforms.Views
         private NumericUpDown _maxRedemptionsNud = null!;
         private DateTimePicker _startDatePicker = null!;
         private DateTimePicker _endDatePicker = null!;
-
+        private TextBox _reasonTxtBx = null!;
         private Label _errorLabel = null!;
 
         // Mode-dependent controls
@@ -85,7 +85,7 @@ namespace CRM_Morcaffein.winforms.Views
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
-            ClientSize = new Size(600, 720);
+            ClientSize = new Size(600, 800);
             BackColor = BrandPalette.SurfaceCard;
             Font = BrandPalette.BrandFontRegular(9.5f);
             Padding = new Padding(24);
@@ -191,7 +191,7 @@ namespace CRM_Morcaffein.winforms.Views
             var panel = new Panel
             {
                 Dock = DockStyle.Fill,
-                BackColor = BrandPalette.SurfacePrimary,
+                BackColor = BrandPalette.SurfaceCard,
                 Padding = new Padding(18, 14, 18, 14),
                 Margin = new Padding(0, 0, 0, 12),
                 Visible = false,
@@ -206,9 +206,9 @@ namespace CRM_Morcaffein.winforms.Views
             var panel = new Panel
             {
                 Dock = DockStyle.Fill,
-                AutoScroll = true,
+                AutoScroll = false,
                 Visible = false,
-                BackColor = BrandPalette.SurfacePrimary,
+                BackColor = BrandPalette.SurfaceCard,
                 Margin = new Padding(0, 0, 0, 12),
             };
 
@@ -217,25 +217,35 @@ namespace CRM_Morcaffein.winforms.Views
             const int rowH = 58;
             const int fieldW = 464;
 
+            // Left inset. Every child control's X is offset by this, so labels
+            // and fields share the same left edge. Previously the labels got PAD
+            // but the fields didn't, so labels sat 40px to the right of the
+            // fields they described.
+            const int PAD = 40;
+
+            // Right column starts at PAD + halfFieldGap. Fields on the right are
+            // 220px wide like their left counterparts.
+            const int COL2 = PAD + 244;
+
             int y = 0;
 
-            void AddLabel(string text)
+            void AddLabel(string text, int x = PAD)
             {
                 panel.Controls.Add(new Label
                 {
                     Text = text,
-                    Location = new Point(0, y),
+                    Location = new Point(x, y),
                     AutoSize = true,
                     Font = BrandPalette.BrandFontRegular(9f),
                     ForeColor = BrandPalette.NeutralTextMuted,
                 });
             }
 
-            // Name
+            // ---- Promo name ----
             AddLabel("Promo name *");
             _nameTxtBx = new TextBox
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(fieldW, fieldH),
                 Font = BrandPalette.BrandFontRegular(9.5f),
                 BorderStyle = BorderStyle.FixedSingle,
@@ -243,11 +253,11 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_nameTxtBx);
             y += rowH;
 
-            // Category
+            // ---- Category ----
             AddLabel("Category *");
             _categoryCombo = new ComboBox
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(fieldW, fieldH),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Font = BrandPalette.BrandFontRegular(9.5f),
@@ -263,11 +273,11 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_categoryCombo);
             y += rowH;
 
-            // Discount type
-            AddLabel("Discount type *");
+            // ---- Discount type + value (2-up) ----
+            AddLabel("Discount type *", PAD);
             _discountTypeCombo = new ComboBox
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(220, fieldH),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Font = BrandPalette.BrandFontRegular(9.5f),
@@ -277,20 +287,13 @@ namespace CRM_Morcaffein.winforms.Views
             _discountTypeCombo.SelectedIndexChanged += (s, e) => UpdateB1T1FieldsVisibility();
             panel.Controls.Add(_discountTypeCombo);
 
-            // Discount value (to the right of type) — hidden for B1T1, which has no
-            // fixed discount value: the free item's own price IS the discount.
-            _discountValueLabel = new Label
-            {
-                Text = "Discount value *",
-                Location = new Point(244, y),
-                AutoSize = true,
-                Font = BrandPalette.BrandFontRegular(9f),
-                ForeColor = BrandPalette.NeutralTextMuted,
-            };
-            panel.Controls.Add(_discountValueLabel);
+            AddLabel("Discount value *", COL2);
+            _discountValueLabel = panel.Controls.OfType<Label>()
+                .Last(l => l.Text == "Discount value *");
+
             _discountValueNud = new NumericUpDown
             {
-                Location = new Point(244, y + labelH),
+                Location = new Point(COL2, y + labelH),
                 Size = new Size(220, fieldH),
                 DecimalPlaces = 2,
                 Minimum = 0.01m,
@@ -301,13 +304,11 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_discountValueNud);
             y += rowH;
 
-            // B1T1 product pickers — only meaningful when Discount type = B1T1, but the
-            // row's vertical space is always reserved so nothing below it has to reflow
-            // when the two controls show/hide.
+            // ---- B1T1 product pickers (2-up, hidden unless Discount type = B1T1) ----
             _requiredProductLabel = new Label
             {
                 Text = "Buy this product *",
-                Location = new Point(0, y),
+                Location = new Point(PAD, y),
                 AutoSize = true,
                 Font = BrandPalette.BrandFontRegular(9f),
                 ForeColor = BrandPalette.NeutralTextMuted,
@@ -315,7 +316,7 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_requiredProductLabel);
             _requiredProductCombo = new ComboBox
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(220, fieldH),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DisplayMember = "ProductName",
@@ -327,7 +328,7 @@ namespace CRM_Morcaffein.winforms.Views
             _rewardProductLabel = new Label
             {
                 Text = "Get this product free *",
-                Location = new Point(244, y),
+                Location = new Point(COL2, y),
                 AutoSize = true,
                 Font = BrandPalette.BrandFontRegular(9f),
                 ForeColor = BrandPalette.NeutralTextMuted,
@@ -335,7 +336,7 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_rewardProductLabel);
             _rewardProductCombo = new ComboBox
             {
-                Location = new Point(244, y + labelH),
+                Location = new Point(COL2, y + labelH),
                 Size = new Size(220, fieldH),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DisplayMember = "ProductName",
@@ -345,11 +346,11 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_rewardProductCombo);
             y += rowH;
 
-            // Target tier
+            // ---- Target tier ----
             AddLabel("Target tier *");
             _targetTierCombo = new ComboBox
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(fieldW, fieldH),
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Font = BrandPalette.BrandFontRegular(9.5f),
@@ -359,18 +360,18 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_targetTierCombo);
             y += rowH;
 
-            // Min purchase (checkbox + value)
+            // ---- Min purchase / Max discount (2-up checkboxes + nud) ----
             _hasMinPurchaseChk = new CheckBox
             {
                 Text = "Minimum purchase amount",
-                Location = new Point(0, y),
+                Location = new Point(PAD, y),
                 AutoSize = true,
                 Font = BrandPalette.BrandFontRegular(9f),
                 ForeColor = BrandPalette.NeutralTextMuted,
             };
             _minPurchaseNud = new NumericUpDown
             {
-                Location = new Point(0, y + labelH + 4),
+                Location = new Point(PAD, y + labelH + 4),
                 Size = new Size(220, fieldH),
                 DecimalPlaces = 2,
                 Minimum = 0m,
@@ -382,18 +383,17 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_hasMinPurchaseChk);
             panel.Controls.Add(_minPurchaseNud);
 
-            // Max discount (checkbox + value) — right column
             _hasMaxDiscountChk = new CheckBox
             {
                 Text = "Maximum discount cap",
-                Location = new Point(244, y),
+                Location = new Point(COL2, y),
                 AutoSize = true,
                 Font = BrandPalette.BrandFontRegular(9f),
                 ForeColor = BrandPalette.NeutralTextMuted,
             };
             _maxDiscountNud = new NumericUpDown
             {
-                Location = new Point(244, y + labelH + 4),
+                Location = new Point(COL2, y + labelH + 4),
                 Size = new Size(220, fieldH),
                 DecimalPlaces = 2,
                 Minimum = 0m,
@@ -406,11 +406,11 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_maxDiscountNud);
             y += rowH + 12;
 
-            // Max redemptions per customer
+            // ---- Max redemptions ----
             AddLabel("Max redemptions per customer *");
             _maxRedemptionsNud = new NumericUpDown
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(220, fieldH),
                 Minimum = 1,
                 Maximum = 1000,
@@ -420,11 +420,28 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_maxRedemptionsNud);
             y += rowH;
 
-            // Start date
-            AddLabel("Start date *");
+            // ---- Reason ----
+            AddLabel("Reason *");
+            _reasonTxtBx = new TextBox
+            {
+                Location = new Point(PAD, y + labelH),
+                Size = new Size(fieldW, 60),
+                Multiline = true,
+                WordWrap = true,
+                ScrollBars = ScrollBars.Vertical,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                BorderStyle = BorderStyle.FixedSingle,
+                MaxLength = 250,
+                PlaceholderText = "E.g. Clearing old matcha stock, Q3 revenue push, response to customer feedback",
+            };
+            panel.Controls.Add(_reasonTxtBx);
+            y += 76;
+
+            // ---- Start / End dates (2-up) ----
+            AddLabel("Start date *", PAD);
             _startDatePicker = new DateTimePicker
             {
-                Location = new Point(0, y + labelH),
+                Location = new Point(PAD, y + labelH),
                 Size = new Size(220, fieldH),
                 Format = DateTimePickerFormat.Short,
                 Font = BrandPalette.BrandFontRegular(9.5f),
@@ -432,18 +449,10 @@ namespace CRM_Morcaffein.winforms.Views
             };
             panel.Controls.Add(_startDatePicker);
 
-            // End date
-            panel.Controls.Add(new Label
-            {
-                Text = "End date *",
-                Location = new Point(244, y),
-                AutoSize = true,
-                Font = BrandPalette.BrandFontRegular(9f),
-                ForeColor = BrandPalette.NeutralTextMuted,
-            });
+            AddLabel("End date *", COL2);
             _endDatePicker = new DateTimePicker
             {
-                Location = new Point(244, y + labelH),
+                Location = new Point(COL2, y + labelH),
                 Size = new Size(220, fieldH),
                 Format = DateTimePickerFormat.Short,
                 Font = BrandPalette.BrandFontRegular(9.5f),
@@ -726,6 +735,7 @@ namespace CRM_Morcaffein.winforms.Views
         private void PopulateEmptyForm()
         {
             _nameTxtBx.Text = string.Empty;
+            _reasonTxtBx.Text = string.Empty;
             _categoryCombo.SelectedIndex = 0;
             _discountTypeCombo.SelectedIndex = 0;
             _discountValueNud.Value = 10m;
@@ -748,6 +758,7 @@ namespace CRM_Morcaffein.winforms.Views
             if (_existing is null) return;
 
             _nameTxtBx.Text = _existing.PromoName;
+            _reasonTxtBx.Text = _existing.Reason ?? string.Empty;
 
             var catIdx = _categoryCombo.Items.IndexOf(_existing.PromoCategory);
             _categoryCombo.SelectedIndex = catIdx >= 0 ? catIdx : 0;
@@ -831,6 +842,7 @@ namespace CRM_Morcaffein.winforms.Views
 
             AddRow("Promo name", _existing.PromoName, BrandPalette.BrandFontBold(11f));
             AddRow("Category", _existing.PromoCategory);
+            AddRow("Reason", string.IsNullOrWhiteSpace(_existing.Reason) ? "—" : _existing.Reason);
             AddRow("Discount", FormatDiscount(_existing.DiscountType, _existing.DiscountValue),
                 BrandPalette.BrandFontBold(11f), BrandPalette.Brand);
 
@@ -872,6 +884,12 @@ namespace CRM_Morcaffein.winforms.Views
             if (string.IsNullOrWhiteSpace(_nameTxtBx.Text))
             {
                 _errorLabel.Text = "Promo name is required.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_reasonTxtBx.Text))
+            {
+                _errorLabel.Text = "A reason for this campaign is required.";
                 return;
             }
 
@@ -934,14 +952,15 @@ namespace CRM_Morcaffein.winforms.Views
                 if (_mode == Mode.Create)
                 {
                     await _controller.CreateAsync(
-                        _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
-                        discountType, discountValue,
-                        _targetTierCombo.SelectedItem as string ?? "All",
-                        minPurchase, maxDiscount,
-                        (int)_maxRedemptionsNud.Value,
-                        _startDatePicker.Value.Date, _endDatePicker.Value.Date,
-                        employeeId,
-                        requiredProductId, rewardProductId);
+                         _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
+                         _reasonTxtBx.Text,
+                         discountType, discountValue,
+                         _targetTierCombo.SelectedItem as string ?? "All",
+                         minPurchase, maxDiscount,
+                         (int)_maxRedemptionsNud.Value,
+                         _startDatePicker.Value.Date, _endDatePicker.Value.Date,
+                         employeeId,
+                         requiredProductId, rewardProductId);
 
                     ChangedSomething = true;
                     DialogResult = DialogResult.OK;
@@ -952,15 +971,16 @@ namespace CRM_Morcaffein.winforms.Views
                     if (_existing is null) return;
 
                     await _controller.UpdateAsync(
-                        _existing.CampaignId,
-                        _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
-                        discountType, discountValue,
-                        _targetTierCombo.SelectedItem as string ?? "All",
-                        minPurchase, maxDiscount,
-                        (int)_maxRedemptionsNud.Value,
-                        _startDatePicker.Value.Date, _endDatePicker.Value.Date,
-                        employeeId,
-                        requiredProductId, rewardProductId);
+                         _existing.CampaignId,
+                         _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
+                         _reasonTxtBx.Text,
+                         discountType, discountValue,
+                         _targetTierCombo.SelectedItem as string ?? "All",
+                         minPurchase, maxDiscount,
+                         (int)_maxRedemptionsNud.Value,
+                         _startDatePicker.Value.Date, _endDatePicker.Value.Date,
+                         employeeId,
+                         requiredProductId, rewardProductId);
 
                     ChangedSomething = true;
                     DialogResult = DialogResult.OK;

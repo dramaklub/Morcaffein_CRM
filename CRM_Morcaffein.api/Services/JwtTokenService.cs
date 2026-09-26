@@ -53,5 +53,31 @@ namespace CRM_Morcaffein.api.Services
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+        public string CreateSuperAdminToken(SuperAdmin superAdmin)
+        {
+            var expiresAt = GetExpiryUtc();
+
+            var claims = new[]
+            {
+                new Claim("superAdminId", superAdmin.SuperAdminId.ToString()),
+                new Claim(ClaimTypes.Role, "SuperAdmin"),
+                new Claim(ClaimTypes.Name, superAdmin.FullName),
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
+            var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _issuer,
+                audience: _audience,
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: expiresAt,
+                signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
     }
 }

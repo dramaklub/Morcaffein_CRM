@@ -1,4 +1,5 @@
-﻿using CRM_Morcaffein.infrastructure.services;
+﻿using CRM_Morcaffein.infrastructure.Data;
+using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -62,6 +63,23 @@ namespace CRM_Morcaffein.api.Controllers
                 skipped,
                 total = credentials.Count,
             });
+        }
+
+        // POST api/tenant/{companyId}/dev/seed
+        //
+        // One-time demo seeder. Adds 3 Baristas + 50 Customers + 200 Orders + 15
+        // Campaigns + supporting feedback / ledger / adjustment rows to the tenant
+        // DB. ADDITIVE — running twice doubles the seeded data. Remove this
+        // endpoint before shipping the API.
+        [HttpPost("seed")]
+        public async Task<ActionResult> SeedData(
+            int companyId,
+            [FromQuery] int customers = 50,
+            [FromQuery] int orders = 200)
+        {
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+            await DatabaseSeeder.SeedAsync(tenant, customers, orders, companyId: companyId);
+            return Ok(new { message = "Seeded.", companyId, customers, orders });
         }
     }
 }
