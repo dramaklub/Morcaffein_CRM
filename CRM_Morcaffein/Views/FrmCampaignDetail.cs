@@ -1,9 +1,10 @@
 ﻿using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.domain.entities;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
-using CRM_Morcaffein.domain.entities;
 using CRM_Morcaffein.winforms.Services;
 using CRM_Morcaffein.winforms.Services.Api;
+using CRM_Morcaffein.winforms.Views.Controls;
 
 namespace CRM_Morcaffein.winforms.Views
 {
@@ -74,7 +75,7 @@ namespace CRM_Morcaffein.winforms.Views
 
         private Button _primaryBtn = null!;       // Create or Save
         private Button _editBtn = null!;          // visible in View
-        private Button _activateBtn = null!;      // visible in View
+        private Button _resubmitBtn = null!;      // visible in View (Inactive campaigns only)
         private Button _deactivateBtn = null!;    // visible in View
         private Button _cancelBtn = null!;        // visible in Create/Edit (as Cancel)
         private Button _closeBtn = null!;         // visible in View
@@ -532,19 +533,19 @@ namespace CRM_Morcaffein.winforms.Views
             _editBtn.FlatAppearance.BorderSize = 0;
             _editBtn.Click += (s, e) => SwitchToEdit();
 
-            _activateBtn = new Button
+            _resubmitBtn = new Button
             {
-                Text = "Activate",
-                Size = new Size(110, 36),
+                Text = "Resubmit for Approval",
+                Size = new Size(180, 36),
                 Location = new Point(110, 8),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = BrandPalette.ButtonSecondaryFill,
-                ForeColor = BrandPalette.ButtonSecondaryText,
+                BackColor = BrandPalette.ButtonPrimaryFill,
+                ForeColor = BrandPalette.ButtonPrimaryText,
                 Font = BrandPalette.BrandFontRegular(9.5f),
                 Cursor = Cursors.Hand,
             };
-            _activateBtn.FlatAppearance.BorderSize = 0;
-            _activateBtn.Click += (s, e) => ToggleActivation(activate: true);
+            _resubmitBtn.FlatAppearance.BorderSize = 0;
+            _resubmitBtn.Click += (s, e) => ResubmitSelected();
 
             _deactivateBtn = new Button
             {
@@ -558,7 +559,7 @@ namespace CRM_Morcaffein.winforms.Views
                 Cursor = Cursors.Hand,
             };
             _deactivateBtn.FlatAppearance.BorderSize = 0;
-            _deactivateBtn.Click += (s, e) => ToggleActivation(activate: false);
+            _deactivateBtn.Click += (s, e) => DeactivateSelected();
 
             _cancelBtn = new Button
             {
@@ -591,14 +592,14 @@ namespace CRM_Morcaffein.winforms.Views
             ButtonStyler.TrackEnabledState(_closeBtn);
             ButtonStyler.TrackEnabledState(_cancelBtn);
             ButtonStyler.TrackEnabledState(_deactivateBtn);
-            ButtonStyler.TrackEnabledState(_activateBtn);
+            ButtonStyler.TrackEnabledState(_resubmitBtn);
             ButtonStyler.TrackEnabledState(_editBtn);
             ButtonStyler.TrackEnabledState(_primaryBtn);
 
             row.Controls.Add(_closeBtn);
             row.Controls.Add(_cancelBtn);
             row.Controls.Add(_deactivateBtn);
-            row.Controls.Add(_activateBtn);
+            row.Controls.Add(_resubmitBtn);
             row.Controls.Add(_editBtn);
             row.Controls.Add(_primaryBtn);
 
@@ -612,11 +613,11 @@ namespace CRM_Morcaffein.winforms.Views
             const int topY = 8;
 
             var ordered = new[]
-            {
+{
                 _closeBtn,
                 _cancelBtn,
                 _editBtn,
-                _activateBtn,
+                _resubmitBtn,
                 _deactivateBtn,
                 _primaryBtn,
             };
@@ -734,7 +735,7 @@ namespace CRM_Morcaffein.winforms.Views
         {
             _primaryBtn.Visible = false;
             _editBtn.Visible = false;
-            _activateBtn.Visible = false;
+            _resubmitBtn.Visible = false;
             _deactivateBtn.Visible = false;
             _cancelBtn.Visible = false;
             _closeBtn.Visible = false;
@@ -767,8 +768,16 @@ namespace CRM_Morcaffein.winforms.Views
                     _editBtn.Visible = true;
                     _closeBtn.Visible = true;
 
-                    var isActive = _existing?.Status?.Equals("Active", StringComparison.OrdinalIgnoreCase) == true;
-                    _activateBtn.Visible = !isActive;
+                    // Buttons depend on status:
+                    //   Active    → Deactivate (Manager can pause a live campaign)
+                    //   Inactive  → Resubmit for Approval (goes back to Pending)
+                    //   Pending   → neither (already awaiting Admin)
+                    //   Rejected  → neither (Manager edits it, which flips to Pending)
+                    var status = _existing?.Status ?? "";
+                    var isActive = status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+                    var isInactive = status.Equals("Inactive", StringComparison.OrdinalIgnoreCase);
+
+                    _resubmitBtn.Visible = isInactive;
                     _deactivateBtn.Visible = isActive;
                     break;
             }
@@ -1153,30 +1162,25 @@ namespace CRM_Morcaffein.winforms.Views
             }
         }
 
-        private async void ToggleActivation(bool activate)
+        private async void ResubmitSelected()
         {
             if (_existing is null) return;
 
-            var verb = activate ? "activate" : "deactivate";
             var confirm = MessageBox.Show(this,
-                $"Are you sure you want to {verb} \"{_existing.PromoName}\"?",
-                activate ? "Activate Campaign" : "Deactivate Campaign",
+                $"Resubmit \"{_existing.PromoName}\" for Admin approval? It will move back to the Pending queue.",
+                "Resubmit Campaign",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
 
             if (confirm != DialogResult.Yes) return;
 
             try
             {
-                _activateBtn.Enabled = false;
-                _deactivateBtn.Enabled = false;
+                _resubmitBtn.Enabled = false;
 
                 var employeeId = EmployeeSession.Current?.EmployeeId
                     ?? throw new InvalidOperationException("No employee session.");
 
-                if (activate)
-                    await _controller.ActivateAsync(_existing.CampaignId, employeeId);
-                else
-                    await _controller.DeactivateAsync(_existing.CampaignId, employeeId);
+                await _controller.ResubmitAsync(_existing.CampaignId, employeeId);
 
                 ChangedSomething = true;
                 DialogResult = DialogResult.OK;
@@ -1184,10 +1188,71 @@ namespace CRM_Morcaffein.winforms.Views
             }
             catch (Exception ex)
             {
-                _errorLabel.Text = ex.Message;
-                _activateBtn.Enabled = true;
+                var displayMessage = ExtractApiMessage(ex.Message);
+                Toast.Show(this, displayMessage, ToastKind.Info);
+                _errorLabel.Text = displayMessage;
+            }
+            finally
+            {
+                _resubmitBtn.Enabled = true;
+            }
+        }
+
+        private async void DeactivateSelected()
+        {
+            if (_existing is null) return;
+
+            var confirm = MessageBox.Show(this,
+                $"Are you sure you want to deactivate \"{_existing.PromoName}\"?",
+                "Deactivate Campaign",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (confirm != DialogResult.Yes) return;
+
+            try
+            {
+                _deactivateBtn.Enabled = false;
+
+                var employeeId = EmployeeSession.Current?.EmployeeId
+                    ?? throw new InvalidOperationException("No employee session.");
+
+                await _controller.DeactivateAsync(_existing.CampaignId, employeeId);
+
+                ChangedSomething = true;
+                DialogResult = DialogResult.OK;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                var displayMessage = ExtractApiMessage(ex.Message);
+                Toast.Show(this, displayMessage, ToastKind.Info);
+                _errorLabel.Text = displayMessage;
+            }
+            finally
+            {
                 _deactivateBtn.Enabled = true;
             }
+        }
+
+        /// <summary>
+        /// The API's error responses come back as JSON bodies like
+        /// {"message":"Pending campaigns must be approved by an admin."}.
+        /// The client's exception message includes that raw JSON. This
+        /// pulls out just the human-readable message.
+        /// </summary>
+        private static string ExtractApiMessage(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "Request failed.";
+
+            const string marker = "\"message\":\"";
+            var idx = raw.IndexOf(marker, StringComparison.Ordinal);
+            if (idx < 0) return raw;
+
+            var start = idx + marker.Length;
+            var end = raw.IndexOf('"', start);
+            if (end < 0) return raw;
+
+            return raw.Substring(start, end - start);
         }
     }
 }   

@@ -112,8 +112,6 @@ Content-Type: application/json
 }
 
 ###
-
-###
 #@name adminLogin
 POST http://localhost:5035/api/auth/login
 Content-Type: application/json
@@ -122,6 +120,10 @@ Content-Type: application/json
   "username": "jason.kub",
   "password": "password123"
 }
+###
+
+POST http://localhost:5035/api/tenant/1/dev/test-email
+Authorization: Bearer {{adminLogin.response.body.$.token}}
 
 ###
 #Log in as a Tenant C Admin

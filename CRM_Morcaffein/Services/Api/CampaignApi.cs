@@ -61,12 +61,13 @@ namespace CRM_Morcaffein.winforms.Services.Api
             return result ?? throw new InvalidOperationException("API returned an empty campaign.");
         }
 
-        // POST api/tenant/{companyId}/campaigns/{id}/activate
-        public async Task<CampaignResponseDto> ActivateAsync(int campaignId, int performedBy)
+        // POST api/tenant/{companyId}/campaigns/{id}/resubmit
+        // Moves an Inactive campaign back to Pending for re-approval.
+        public async Task<CampaignResponseDto> ResubmitAsync(int campaignId, int performedBy)
         {
             var body = new CampaignActionRequest { PerformedBy = performedBy };
             var response = await _http.PostAsJsonAsync(
-                $"api/tenant/{ApiConfig.CompanyId}/campaigns/{campaignId}/activate", body);
+                $"api/tenant/{ApiConfig.CompanyId}/campaigns/{campaignId}/resubmit", body);
             await EnsureSuccess(response);
             var result = await response.Content.ReadFromJsonAsync<CampaignResponseDto>();
             return result ?? throw new InvalidOperationException("API returned an empty campaign.");
@@ -92,14 +93,16 @@ namespace CRM_Morcaffein.winforms.Services.Api
         }
 
         // POST api/tenant/{companyId}/campaigns/{id}/approve
-        public async Task<CampaignResponseDto> ApproveAsync(int campaignId, int decidedBy, string? notes)
+        // Returns the campaign plus the outcome of the retention-email send
+        // that fires after approval. See ApproveCampaignResponse.
+        public async Task<ApproveCampaignResponse> ApproveAsync(int campaignId, int decidedBy, string? notes)
         {
             var body = new DecideCampaignRequest { DecidedBy = decidedBy, Notes = notes };
             var response = await _http.PostAsJsonAsync(
                 $"api/tenant/{ApiConfig.CompanyId}/campaigns/{campaignId}/approve", body);
             await EnsureSuccess(response);
-            var result = await response.Content.ReadFromJsonAsync<CampaignResponseDto>();
-            return result ?? throw new InvalidOperationException("API returned an empty campaign.");
+            var result = await response.Content.ReadFromJsonAsync<ApproveCampaignResponse>();
+            return result ?? throw new InvalidOperationException("API returned an empty approve response.");
         }
 
         // POST api/tenant/{companyId}/campaigns/{id}/reject

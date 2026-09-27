@@ -638,9 +638,23 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 var adminId = EmployeeSession.Current?.EmployeeId
                     ?? throw new InvalidOperationException("No employee session.");
 
-                await _controller.ApproveAsync(campaign.CampaignId, adminId, notes);
+                var result = await _controller.ApproveAsync(campaign.CampaignId, adminId, notes);
 
-                Toast.Show(this, $"Approved \"{campaign.PromoName}\".", ToastKind.Success);
+                // The approve succeeds even if the retention-email send failed —
+                // surface both outcomes so the Admin knows whether the customer
+                // message went out.
+                if (result.EmailSent)
+                {
+                    Toast.Show(this,
+                        $"Approved \"{campaign.PromoName}\". Retention email sent.",
+                        ToastKind.Success);
+                }
+                else
+                {
+                    Toast.Show(this,
+                        $"Approved \"{campaign.PromoName}\", but the email failed: {result.EmailError}",
+                        ToastKind.Info);
+                }
 
                 await ReloadAsync();
             }

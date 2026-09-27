@@ -1,4 +1,5 @@
 ﻿using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.api.Services;
 using CRM_Morcaffein.infrastructure.data;
 using CRM_Morcaffein.infrastructure.Data;
 using CRM_Morcaffein.infrastructure.services;
@@ -169,6 +170,35 @@ namespace CRM_Morcaffein.api.Controllers
             await master.SaveChangesAsync();
 
             return Ok(response);
+        }
+
+        // POST api/tenant/{companyId}/dev/test-email
+        //
+        // Sends a plain "hello world" test email to the configured
+        // MailKit:DemoRecipient. Used to verify SMTP config without
+        // touching the campaign approval flow.
+        [HttpPost("test-email")]
+        public async Task<ActionResult> TestEmail(
+            int companyId,
+            [FromServices] IEmailService emailService,
+            [FromServices] IConfiguration config)
+        {
+            var recipient = config["MailKit:DemoRecipient"];
+            if (string.IsNullOrWhiteSpace(recipient))
+                return BadRequest(new { message = "MailKit:DemoRecipient is not configured." });
+
+            var subject = "[Morcaffein] SMTP test";
+            var body =
+                "This is a test email from the Morcaffein platform.\n\n" +
+                "If you're reading this, the MailKit SMTP pipeline is working.\n\n" +
+                "— Morcaffein";
+
+            var (success, error) = await emailService.SendAsync(recipient, subject, body);
+
+            if (!success)
+                return StatusCode(500, new { message = $"Send failed: {error}" });
+
+            return Ok(new { message = $"Test email sent to {recipient}." });
         }
 
         // POST api/tenant/{companyId}/dev/seed

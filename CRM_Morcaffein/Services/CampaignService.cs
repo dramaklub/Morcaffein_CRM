@@ -114,9 +114,12 @@ namespace CRM_Morcaffein.winforms.Services
             return result;
         }
 
-        public async Task<CampaignResponseDto> ActivateAsync(int campaignId, int performedByEmployeeId)
+        public async Task<CampaignResponseDto> ResubmitAsync(int campaignId, int performedByEmployeeId)
         {
-            var result = await _api.ActivateAsync(campaignId, performedByEmployeeId);
+            var result = await _api.ResubmitAsync(campaignId, performedByEmployeeId);
+            // Resubmitted campaigns go back to Pending (not Active), so the
+            // POS cache is technically unaffected — but reset anyway for
+            // consistency with the other mutations.
             CampaignCache.Reset();
             return result;
         }
@@ -134,7 +137,7 @@ namespace CRM_Morcaffein.winforms.Services
         public Task<List<CampaignResponseDto>> GetPendingAsync()
             => _api.GetPendingForApprovalAsync();
 
-        public async Task<CampaignResponseDto> ApproveAsync(int campaignId, int decidedByEmployeeId, string? notes)
+        public async Task<ApproveCampaignResponse> ApproveAsync(int campaignId, int decidedByEmployeeId, string? notes)
         {
             var result = await _api.ApproveAsync(campaignId, decidedByEmployeeId, notes);
             // Approved campaigns become Active — POS's cached active list is stale.

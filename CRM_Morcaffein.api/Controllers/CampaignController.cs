@@ -1,10 +1,12 @@
 ﻿using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.api.Services;
 using CRM_Morcaffein.domain.entities;
 using CRM_Morcaffein.infrastructure.data;
 using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace CRM_Morcaffein.api.Controllers
 {
@@ -14,10 +16,17 @@ namespace CRM_Morcaffein.api.Controllers
     public class CampaignController : ControllerBase
     {
         private readonly ITenantDbContextFactory _tenantFactory;
+        private readonly IEmailService _emailService;
+        private readonly IConfiguration _config;
 
-        public CampaignController(ITenantDbContextFactory tenantFactory)
+        public CampaignController(
+            ITenantDbContextFactory tenantFactory,
+            IEmailService emailService,
+            IConfiguration config)
         {
             _tenantFactory = tenantFactory;
+            _emailService = emailService;
+            _config = config;
         }
 
         // GET api/tenant/{companyId}/campaigns
@@ -356,9 +365,23 @@ namespace CRM_Morcaffein.api.Controllers
             return Ok(MapToDto(campaign));
         }
 
-        // POST api/tenant/{companyId}/campaigns/{id}/activate
-        [HttpPost("{id:int}/activate")]
-        public async Task<ActionResult<CampaignResponseDto>> ActivateCampaign(
+        // POST api/tenant/{companyId}/campaigns/{id}/resubmit
+        //
+        // Moves an Inactive campaign back to Pending so the Admin can
+        // approve it again. This is the only route from Inactive back
+        // toward Active — a Manager cannot reactivate directly; approval
+        // is always the final gate.
+        //
+        // Also clears the previous decision fields (DecidedBy, DecidedAt,
+        // DecisionNotes). The old approval is no longer relevant once the
+        // campaign re-enters the queue.
+        //
+        // Manager-only. Only works on Inactive campaigns — Pending ones are
+        // already in the queue, Active ones don't need resubmitting, and
+        // Rejected ones go through the normal edit→resubmit path
+        // (UpdateCampaign flips them to Pending).
+        [HttpPost("{id:int}/resubmit")]
+        public async Task<ActionResult<CampaignResponseDto>> ResubmitCampaign(
             int companyId,
             int id,
             CampaignActionRequest request)
@@ -373,20 +396,25 @@ namespace CRM_Morcaffein.api.Controllers
                 return BadRequest(new { message = "Actor not found." });
 
             if (!actor.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { message = "Only managers can activate campaigns." });
+                return StatusCode(403, new { message = "Only managers can resubmit campaigns." });
 
             var campaign = await tenant.Campaigns.FirstOrDefaultAsync(c => c.CampaignId == id);
             if (campaign is null)
                 return NotFound();
 
-            if (campaign.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { message = "Pending campaigns must be approved by an admin before they can go live." });
+            if (!campaign.Status.Equals("Inactive", StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(403, new
+                {
+                    message = $"Only inactive campaigns can be resubmitted (current status: {campaign.Status})."
+                });
+            }
 
-            if (campaign.Status.Equals("Rejected", StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { message = "Rejected campaigns must be edited and resubmitted for approval." });
-
-            campaign.Status = "Active";
-            campaign.IsActive = true;
+            campaign.Status = "Pending";
+            campaign.IsActive = false;
+            campaign.DecidedBy = null;
+            campaign.DecidedAt = null;
+            campaign.DecisionNotes = null;
             campaign.UpdatedAt = DateTime.UtcNow;
 
             try
@@ -501,7 +529,7 @@ namespace CRM_Morcaffein.api.Controllers
 
         // POST api/tenant/{companyId}/campaigns/{id}/approve
         [HttpPost("{id:int}/approve")]
-        public async Task<ActionResult<CampaignResponseDto>> ApproveCampaign(
+        public async Task<ActionResult<ApproveCampaignResponse>> ApproveCampaign(
             int companyId,
             int id,
             DecideCampaignRequest request)
@@ -547,7 +575,68 @@ namespace CRM_Morcaffein.api.Controllers
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
-            return Ok(MapToDto(campaign));
+            var campaignDto = MapToDto(campaign);
+
+            // ---- Retention email ----
+            // Composed from the campaign's own fields and sent to the demo
+            // recipient configured under MailKit:DemoRecipient. Failures are
+            // surfaced to the caller but do NOT roll back the approval — the
+            // campaign is Active regardless of SMTP state.
+            var response = new ApproveCampaignResponse { Campaign = campaignDto };
+
+            var recipient = _config["MailKit:DemoRecipient"];
+            if (string.IsNullOrWhiteSpace(recipient))
+            {
+                response.EmailSent = false;
+                response.EmailError = "MailKit:DemoRecipient is not configured.";
+                return Ok(response);
+            }
+
+            var subject = $"[Morcaffein] {campaignDto.PromoName}";
+            var body = BuildApprovalEmailBody(campaignDto);
+
+            var (sent, error) = await _emailService.SendAsync(recipient, subject, body, HttpContext.RequestAborted);
+
+            response.EmailSent = sent;
+            response.EmailError = error;
+
+            return Ok(response);
+        }
+
+        /// <summary>
+        /// Composes the plain-text body of the campaign-approval email.
+        /// Format matches the design agreed with the platform operator:
+        /// greeting, description paragraph, discount line, valid dates,
+        /// sign-off. No category, no labeling of the description as
+        /// "message to customers" — it's presented as-is.
+        /// </summary>
+        private static string BuildApprovalEmailBody(CampaignResponseDto c)
+        {
+            var description = string.IsNullOrWhiteSpace(c.Description)
+                ? "(No message provided.)"
+                : c.Description.Trim();
+
+            var discount = FormatDiscountForEmail(c.DiscountType, c.DiscountValue);
+
+            return
+                "Hi there,\r\n" +
+                "\r\n" +
+                description + "\r\n" +
+                "\r\n" +
+                $"Discount: {discount}\r\n" +
+                $"Valid from: {c.StartDate:MMMM d, yyyy}\r\n" +
+                $"Valid until: {c.EndDate:MMMM d, yyyy}\r\n" +
+                "\r\n" +
+                "— Morcaffein";
+        }
+
+        private static string FormatDiscountForEmail(string type, decimal value)
+        {
+            if (type.Equals("B1T1", StringComparison.OrdinalIgnoreCase))
+                return "Buy 1, Take 1";
+            if (type.Equals("Percentage", StringComparison.OrdinalIgnoreCase))
+                return $"{value:0.##}% off";
+            return $"₱{value:0.##} off";
         }
 
         // POST api/tenant/{companyId}/campaigns/{id}/reject

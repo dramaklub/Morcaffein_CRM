@@ -80,6 +80,8 @@ builder.Services
         };
     });
 
+builder.Services.AddSingleton<IEmailService, SmtpEmailService>();
+
 builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<JwtTokenService>();
