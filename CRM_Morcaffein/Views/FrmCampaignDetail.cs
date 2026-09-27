@@ -1,8 +1,9 @@
-﻿using CRM_Morcaffein.Controllers;
-using CRM_Morcaffein.api.DTOs;
+﻿using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
 using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.winforms.Services;
+using CRM_Morcaffein.winforms.Services.Api;
 
 namespace CRM_Morcaffein.winforms.Views
 {
@@ -15,14 +16,18 @@ namespace CRM_Morcaffein.winforms.Views
     ///   Edit    — entered from View by clicking Edit. Same fields as Create, but
     ///             pre-populated and saving via the update endpoint.
     ///
-    /// The modal is code-only (no Designer.cs), matching FrmCreateEmployee and
-    /// FrmItemCustomizer.
+    /// Branch scoping: an all-branch Manager sees a Branch dropdown and can choose
+    /// "All Branches" (company-wide campaign) or a specific branch. A pinned Manager
+    /// doesn't see the dropdown — their campaign is always scoped to their own branch,
+    /// enforced server-side too.
+    ///
+    /// The modal is code-only (no Designer.cs), matching FrmCreateEmployee.
     /// </summary>
     public class FrmCampaignDetail : Form
     {
         private enum Mode { Create, View, Edit }
 
-        private readonly CampaignController _controller;
+        private readonly CampaignService _controller;
         private readonly CampaignResponseDto? _existing;
 
         private Mode _mode;
@@ -42,7 +47,15 @@ namespace CRM_Morcaffein.winforms.Views
         // two combos above (they can't be selected before their Items exist).
         private int? _pendingRequiredProductId;
         private int? _pendingRewardProductId;
+
         private ComboBox _targetTierCombo = null!;
+
+        // Branch selector — visible only for all-branch Managers.
+        private Label _branchLabel = null!;
+        private ComboBox _branchCombo = null!;
+        private readonly List<BranchItem> _branchesCache = new();
+        private bool _branchesLoaded;
+
         private NumericUpDown _minPurchaseNud = null!;
         private CheckBox _hasMinPurchaseChk = null!;
         private NumericUpDown _maxDiscountNud = null!;
@@ -51,6 +64,7 @@ namespace CRM_Morcaffein.winforms.Views
         private DateTimePicker _startDatePicker = null!;
         private DateTimePicker _endDatePicker = null!;
         private TextBox _reasonTxtBx = null!;
+        private TextBox _descriptionTxtBx = null!;
         private Label _errorLabel = null!;
 
         // Mode-dependent controls
@@ -68,7 +82,7 @@ namespace CRM_Morcaffein.winforms.Views
         /// <summary>True if a mutation (create/edit/activate/deactivate) was performed.</summary>
         public bool ChangedSomething { get; private set; }
 
-        private FrmCampaignDetail(CampaignController controller, CampaignResponseDto? existing, Mode initialMode)
+        private FrmCampaignDetail(CampaignService controller, CampaignResponseDto? existing, Mode initialMode)
         {
             _controller = controller;
             _existing = existing;
@@ -99,27 +113,26 @@ namespace CRM_Morcaffein.winforms.Views
 
             ApplyMode();
             UpdateB1T1FieldsVisibility();
-            _ = LoadProductsAsync();
+            UpdateBranchFieldVisibility();
 
-            // Re-run button positioning once the form is shown. ApplyMode and BuildLayout
-            // run before docking settles, so their button positions may be off. Load fires
-            // after ClientSize is final, guaranteeing a correct layout.
+            _ = LoadProductsAsync();
+            _ = LoadBranchesAsync();
+
             Load += (s, e) =>
             {
                 PositionActionButtons(_actionRow);
                 if (_mode == Mode.View) RefreshViewPanel();
             };
         }
-        
 
         // =====================================================================
         // FACTORY METHODS — how the caller opens the modal
         // =====================================================================
 
-        public static FrmCampaignDetail ForCreate(CampaignController controller)
+        public static FrmCampaignDetail ForCreate(CampaignService controller)
             => new(controller, existing: null, Mode.Create);
 
-        public static FrmCampaignDetail ForView(CampaignController controller, CampaignResponseDto campaign)
+        public static FrmCampaignDetail ForView(CampaignService controller, CampaignResponseDto campaign)
             => new(controller, campaign, Mode.View);
 
         // =====================================================================
@@ -128,7 +141,6 @@ namespace CRM_Morcaffein.winforms.Views
 
         private void BuildLayout()
         {
-            // ---- Title ----
             var titleLabel = new Label
             {
                 Dock = DockStyle.Top,
@@ -151,13 +163,9 @@ namespace CRM_Morcaffein.winforms.Views
                     : "Review the campaign details.",
             };
 
-            // ---- View panel (read-only summary) ----
             _viewPanel = BuildViewPanel();
-
-            // ---- Form panel (editable fields) ----
             _formPanel = BuildFormPanel();
 
-            // ---- Error label ----
             _errorLabel = new Label
             {
                 Dock = DockStyle.Bottom,
@@ -166,17 +174,10 @@ namespace CRM_Morcaffein.winforms.Views
                 ForeColor = BrandPalette.StatusNegativeFill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 BackColor = BrandPalette.SurfaceCard,
-
             };
 
-            // ---- Action row (buttons) ----
             _actionRow = BuildActionRow();
 
-            // Compose. The Fill panels go in first so they have the LOWEST z-order in
-            // their dock band; the error label and action row go in after so they paint
-            // on top of the panel's bottom edge. This is what gives the panel a clean cut
-            // with a visible tan strip above the buttons, instead of the panel extending
-            // underneath them.
             Controls.Add(_viewPanel);
             Controls.Add(_formPanel);
             Controls.Add(_errorLabel);
@@ -196,8 +197,6 @@ namespace CRM_Morcaffein.winforms.Views
                 Margin = new Padding(0, 0, 0, 12),
                 Visible = false,
             };
-
-            // Populated in ApplyMode() by switching the label texts.
             return panel;
         }
 
@@ -216,15 +215,7 @@ namespace CRM_Morcaffein.winforms.Views
             const int fieldH = 30;
             const int rowH = 58;
             const int fieldW = 464;
-
-            // Left inset. Every child control's X is offset by this, so labels
-            // and fields share the same left edge. Previously the labels got PAD
-            // but the fields didn't, so labels sat 40px to the right of the
-            // fields they described.
             const int PAD = 40;
-
-            // Right column starts at PAD + halfFieldGap. Fields on the right are
-            // 220px wide like their left counterparts.
             const int COL2 = PAD + 244;
 
             int y = 0;
@@ -360,6 +351,28 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_targetTierCombo);
             y += rowH;
 
+            // ---- Branch (all-branch Managers only) ----
+            _branchLabel = new Label
+            {
+                Text = "Branch *",
+                Location = new Point(PAD, y),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+            };
+            panel.Controls.Add(_branchLabel);
+
+            _branchCombo = new ComboBox
+            {
+                Location = new Point(PAD, y + labelH),
+                Size = new Size(fieldW, fieldH),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                DisplayMember = "Display",
+            };
+            panel.Controls.Add(_branchCombo);
+            y += rowH;
+
             // ---- Min purchase / Max discount (2-up checkboxes + nud) ----
             _hasMinPurchaseChk = new CheckBox
             {
@@ -437,6 +450,23 @@ namespace CRM_Morcaffein.winforms.Views
             panel.Controls.Add(_reasonTxtBx);
             y += 76;
 
+            // ---- Description (customer-facing message) ----
+            AddLabel("Message to customers * (max 500 chars)");
+            _descriptionTxtBx = new TextBox
+            {
+                Location = new Point(PAD, y + labelH),
+                Size = new Size(fieldW, 60),
+                Multiline = true,
+                WordWrap = true,
+                ScrollBars = ScrollBars.Vertical,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                BorderStyle = BorderStyle.FixedSingle,
+                MaxLength = 500,
+                PlaceholderText = "What the customer will read in the email — warm, short, first-person from the shop.",
+            };
+            panel.Controls.Add(_descriptionTxtBx);
+            y += 76;
+
             // ---- Start / End dates (2-up) ----
             AddLabel("Start date *", PAD);
             _startDatePicker = new DateTimePicker
@@ -474,7 +504,6 @@ namespace CRM_Morcaffein.winforms.Views
                 BackColor = Color.Transparent,
             };
 
-            // Create primary button (Create or Save)
             _primaryBtn = new Button
             {
                 Text = "Create Campaign",
@@ -489,7 +518,6 @@ namespace CRM_Morcaffein.winforms.Views
             _primaryBtn.FlatAppearance.BorderSize = 0;
             _primaryBtn.Click += PrimaryBtn_Click;
 
-            // Edit (View mode)
             _editBtn = new Button
             {
                 Text = "Edit",
@@ -504,7 +532,6 @@ namespace CRM_Morcaffein.winforms.Views
             _editBtn.FlatAppearance.BorderSize = 0;
             _editBtn.Click += (s, e) => SwitchToEdit();
 
-            // Activate (View mode)
             _activateBtn = new Button
             {
                 Text = "Activate",
@@ -519,7 +546,6 @@ namespace CRM_Morcaffein.winforms.Views
             _activateBtn.FlatAppearance.BorderSize = 0;
             _activateBtn.Click += (s, e) => ToggleActivation(activate: true);
 
-            // Deactivate (View mode)
             _deactivateBtn = new Button
             {
                 Text = "Deactivate",
@@ -534,7 +560,6 @@ namespace CRM_Morcaffein.winforms.Views
             _deactivateBtn.FlatAppearance.BorderSize = 0;
             _deactivateBtn.Click += (s, e) => ToggleActivation(activate: false);
 
-            // Cancel (Create/Edit mode)
             _cancelBtn = new Button
             {
                 Text = "Cancel",
@@ -549,7 +574,6 @@ namespace CRM_Morcaffein.winforms.Views
             _cancelBtn.FlatAppearance.BorderSize = 0;
             _cancelBtn.Click += CancelBtn_Click;
 
-            // Close (View mode)
             _closeBtn = new Button
             {
                 Text = "Close",
@@ -563,7 +587,7 @@ namespace CRM_Morcaffein.winforms.Views
             };
             _closeBtn.FlatAppearance.BorderSize = 0;
             _closeBtn.Click += (s, e) => { DialogResult = ChangedSomething ? DialogResult.OK : DialogResult.Cancel; Close(); };
-            
+
             ButtonStyler.TrackEnabledState(_closeBtn);
             ButtonStyler.TrackEnabledState(_cancelBtn);
             ButtonStyler.TrackEnabledState(_deactivateBtn);
@@ -581,22 +605,6 @@ namespace CRM_Morcaffein.winforms.Views
             return row;
         }
 
-        /// <summary>
-        /// Places the visible action buttons left-to-right at fixed offsets inside the
-        /// row. Deliberately does NOT depend on the row's ClientSize — this runs during
-        /// the form's Load event, before docking has settled, and earlier attempts to
-        /// compute positions from ClientSize pushed buttons off the right edge (or behind
-        /// each other) because the row reported a stale or zero width at that moment.
-        ///
-        /// Layout: buttons are laid out in visual order from x=16 onward, rightward.
-        /// Whatever fits, fits; the row's Width is generous enough for every combination
-        /// of visible buttons, which is why fixed offsets are safe here.
-        ///
-        /// Visual order (left → right):
-        ///   Close / Cancel  |  Deactivate  |  Activate  |  Edit  |  Create/Save
-        /// Destructive (Deactivate) sits well away from the confirm action (Create/Save)
-        /// to avoid mis-clicks.
-        /// </summary>
         private void PositionActionButtons(Panel row)
         {
             const int leftInset = 16;
@@ -604,7 +612,7 @@ namespace CRM_Morcaffein.winforms.Views
             const int topY = 8;
 
             var ordered = new[]
- {
+            {
                 _closeBtn,
                 _cancelBtn,
                 _editBtn,
@@ -626,12 +634,104 @@ namespace CRM_Morcaffein.winforms.Views
         }
 
         // =====================================================================
+        // BRANCH HANDLING
+        // =====================================================================
+
+        /// <summary>
+        /// True if the current employee can pick a branch for their campaigns.
+        /// An all-branch Manager (Employee.BranchId == null) can. A pinned
+        /// Manager's campaigns are always their own branch — no choice offered.
+        /// </summary>
+        private bool CanChooseBranch =>
+            EmployeeSession.Current?.Employee?.BranchId is null;
+
+        /// <summary>
+        /// Shows or hides the branch row depending on whether the current user
+        /// can choose a branch. A pinned Manager's branch row is hidden entirely
+        /// (rather than disabled) — there's nothing to explain.
+        /// </summary>
+        private void UpdateBranchFieldVisibility()
+        {
+            if (_branchLabel is null || _branchCombo is null) return;
+
+            var canChoose = CanChooseBranch;
+            _branchLabel.Visible = canChoose;
+            _branchCombo.Visible = canChoose;
+        }
+
+        private async Task LoadBranchesAsync()
+        {
+            // Nothing to load if the user can't choose.
+            if (!CanChooseBranch) return;
+
+            try
+            {
+                var api = new BranchApi();
+                var branches = await api.GetBranchesAsync();
+
+                _branchesCache.Clear();
+                // "All Branches" first — the company-wide option (BranchId = null).
+                _branchesCache.Add(new BranchItem(null, "All Branches"));
+                foreach (var b in branches)
+                    _branchesCache.Add(new BranchItem(b.BranchId, b.BranchName));
+
+                _branchCombo.Items.Clear();
+                foreach (var b in _branchesCache)
+                    _branchCombo.Items.Add(b);
+
+                // Default or preserve selection. In Create mode, "All Branches" is
+                // index 0. In View/Edit mode, the existing campaign's branch is
+                // preselected by PopulateFromExisting, but that runs before the
+                // async load, so we reapply here.
+                if (_mode == Mode.Create)
+                {
+                    _branchCombo.SelectedIndex = 0;
+                }
+                else if (_existing is not null)
+                {
+                    SelectBranchById(_existing.BranchId);
+                }
+                else if (_branchCombo.Items.Count > 0)
+                {
+                    _branchCombo.SelectedIndex = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                _errorLabel.Text = $"Could not load branches: {ex.Message}";
+            }
+        }
+
+        private void SelectBranchById(int? branchId)
+        {
+            for (int i = 0; i < _branchCombo.Items.Count; i++)
+            {
+                if (_branchCombo.Items[i] is BranchItem bi && bi.BranchId == branchId)
+                {
+                    _branchCombo.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Wrapper so the combo can hold both "All Branches" (BranchId = null)
+        /// and specific branches (BranchId = N) without nullable-binding pain.
+        /// </summary>
+        private sealed class BranchItem
+        {
+            public int? BranchId { get; }
+            public string Display { get; }
+            public BranchItem(int? id, string display) { BranchId = id; Display = display; }
+            public override string ToString() => Display;
+        }
+
+        // =====================================================================
         // MODE
         // =====================================================================
 
         private void ApplyMode()
         {
-            // Reset visibility for all mode-dependent controls
             _primaryBtn.Visible = false;
             _editBtn.Visible = false;
             _activateBtn.Visible = false;
@@ -667,14 +767,12 @@ namespace CRM_Morcaffein.winforms.Views
                     _editBtn.Visible = true;
                     _closeBtn.Visible = true;
 
-                    // Only one of Activate / Deactivate is ever visible, based on status.
                     var isActive = _existing?.Status?.Equals("Active", StringComparison.OrdinalIgnoreCase) == true;
                     _activateBtn.Visible = !isActive;
                     _deactivateBtn.Visible = isActive;
                     break;
             }
 
-            // Reflow button positions after visibility changes.
             PositionActionButtons(_actionRow);
         }
 
@@ -683,17 +781,13 @@ namespace CRM_Morcaffein.winforms.Views
             _mode = Mode.Edit;
             PopulateFromExisting();
             ApplyMode();
+            UpdateBranchFieldVisibility();
         }
 
         // =====================================================================
         // DATA BINDING
         // =====================================================================
 
-        /// <summary>
-        /// Shows the product pickers and hides the discount-value field when the selected
-        /// discount type is B1T1, and vice versa. Called on every discount-type change and
-        /// once up front after the initial mode/population pass.
-        /// </summary>
         private void UpdateB1T1FieldsVisibility()
         {
             var isB1T1 = _discountTypeCombo.SelectedItem as string == "B1T1";
@@ -707,11 +801,6 @@ namespace CRM_Morcaffein.winforms.Views
             _rewardProductCombo.Visible = isB1T1;
         }
 
-        /// <summary>
-        /// Loads the product catalog (shared cache — same one the POS uses) and fills
-        /// both B1T1 combos. Runs async because the constructor can't await; any pending
-        /// selection from PopulateFromExisting is applied once the items exist.
-        /// </summary>
         private async Task LoadProductsAsync()
         {
             try
@@ -736,12 +825,18 @@ namespace CRM_Morcaffein.winforms.Views
         {
             _nameTxtBx.Text = string.Empty;
             _reasonTxtBx.Text = string.Empty;
+            _descriptionTxtBx.Text = string.Empty;
             _categoryCombo.SelectedIndex = 0;
             _discountTypeCombo.SelectedIndex = 0;
             _discountValueNud.Value = 10m;
             _pendingRequiredProductId = null;
             _pendingRewardProductId = null;
             _targetTierCombo.SelectedIndex = 0;
+
+            // Branch defaults to "All Branches" (index 0) once LoadBranchesAsync
+            // populates the combo. If the user is pinned, the row is hidden and
+            // the branch is resolved from their employee record at save time.
+
             _hasMinPurchaseChk.Checked = false;
             _minPurchaseNud.Value = 0m;
             _minPurchaseNud.Enabled = false;
@@ -759,6 +854,7 @@ namespace CRM_Morcaffein.winforms.Views
 
             _nameTxtBx.Text = _existing.PromoName;
             _reasonTxtBx.Text = _existing.Reason ?? string.Empty;
+            _descriptionTxtBx.Text = _existing.Description ?? string.Empty;
 
             var catIdx = _categoryCombo.Items.IndexOf(_existing.PromoCategory);
             _categoryCombo.SelectedIndex = catIdx >= 0 ? catIdx : 0;
@@ -768,13 +864,17 @@ namespace CRM_Morcaffein.winforms.Views
 
             _discountValueNud.Value = _existing.DiscountValue > 0 ? _existing.DiscountValue : 0.01m;
 
-            // Stashed for LoadProductsAsync to apply once the combos have items — they're
-            // empty at this point since the catalog fetch hasn't completed yet.
             _pendingRequiredProductId = _existing.RequiredProductId;
             _pendingRewardProductId = _existing.RewardProductId;
 
             var tierIdx = _targetTierCombo.Items.IndexOf(_existing.TargetTier);
             _targetTierCombo.SelectedIndex = tierIdx >= 0 ? tierIdx : 0;
+
+            // Preselect the campaign's existing branch. If the combo hasn't been
+            // populated yet (async load hasn't returned), LoadBranchesAsync will
+            // apply this selection once items exist.
+            if (CanChooseBranch && _branchCombo.Items.Count > 0)
+                SelectBranchById(_existing.BranchId);
 
             if (_existing.MinPurchaseAmount.HasValue)
             {
@@ -843,6 +943,7 @@ namespace CRM_Morcaffein.winforms.Views
             AddRow("Promo name", _existing.PromoName, BrandPalette.BrandFontBold(11f));
             AddRow("Category", _existing.PromoCategory);
             AddRow("Reason", string.IsNullOrWhiteSpace(_existing.Reason) ? "—" : _existing.Reason);
+            AddRow("Message", string.IsNullOrWhiteSpace(_existing.Description) ? "—" : _existing.Description);
             AddRow("Discount", FormatDiscount(_existing.DiscountType, _existing.DiscountValue),
                 BrandPalette.BrandFontBold(11f), BrandPalette.Brand);
 
@@ -853,6 +954,15 @@ namespace CRM_Morcaffein.winforms.Views
             }
 
             AddRow("Target tier", _existing.TargetTier);
+
+            // Branch row — resolved server-side ("All Branches" if null).
+            var branchDisplay = string.IsNullOrWhiteSpace(_existing.BranchName)
+                ? "All Branches"
+                : _existing.BranchName;
+            AddRow("Branch", branchDisplay,
+                _existing.BranchId is null ? null : BrandPalette.BrandFontBold(9.5f),
+                _existing.BranchId is null ? BrandPalette.NeutralTextMuted : (Color?)null);
+
             AddRow("Min purchase", _existing.MinPurchaseAmount.HasValue ? $"₱{_existing.MinPurchaseAmount.Value:0.00}" : "—");
             AddRow("Max discount", _existing.MaxDiscountAmount.HasValue ? $"₱{_existing.MaxDiscountAmount.Value:0.00}" : "—");
             AddRow("Max redemptions", $"{_existing.MaxRedemptionsPerCustomer} per customer");
@@ -880,7 +990,6 @@ namespace CRM_Morcaffein.winforms.Views
         {
             _errorLabel.Text = string.Empty;
 
-            // Client-side validation before hitting the API (matches server rules).
             if (string.IsNullOrWhiteSpace(_nameTxtBx.Text))
             {
                 _errorLabel.Text = "Promo name is required.";
@@ -890,6 +999,12 @@ namespace CRM_Morcaffein.winforms.Views
             if (string.IsNullOrWhiteSpace(_reasonTxtBx.Text))
             {
                 _errorLabel.Text = "A reason for this campaign is required.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_descriptionTxtBx.Text))
+            {
+                _errorLabel.Text = "A message for customers is required.";
                 return;
             }
 
@@ -939,6 +1054,29 @@ namespace CRM_Morcaffein.winforms.Views
                 return;
             }
 
+            // ---- Branch resolution ----
+            // All-branch Manager: read from the dropdown (null = company-wide).
+            // Pinned Manager: use their own branch — dropdown is hidden.
+            int? branchId;
+            if (CanChooseBranch)
+            {
+                if (_branchCombo.SelectedItem is not BranchItem selectedBranch)
+                {
+                    _errorLabel.Text = "Please choose a branch (or All Branches).";
+                    return;
+                }
+                branchId = selectedBranch.BranchId;
+            }
+            else
+            {
+                branchId = EmployeeSession.Current?.Employee?.BranchId;
+                if (branchId is null)
+                {
+                    _errorLabel.Text = "Could not resolve your branch. Please log in again.";
+                    return;
+                }
+            }
+
             var employeeId = EmployeeSession.Current?.EmployeeId
                 ?? throw new InvalidOperationException("No employee session.");
 
@@ -952,15 +1090,17 @@ namespace CRM_Morcaffein.winforms.Views
                 if (_mode == Mode.Create)
                 {
                     await _controller.CreateAsync(
-                         _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
-                         _reasonTxtBx.Text,
-                         discountType, discountValue,
-                         _targetTierCombo.SelectedItem as string ?? "All",
-                         minPurchase, maxDiscount,
-                         (int)_maxRedemptionsNud.Value,
-                         _startDatePicker.Value.Date, _endDatePicker.Value.Date,
-                         employeeId,
-                         requiredProductId, rewardProductId);
+                        _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
+                        _reasonTxtBx.Text,
+                        _descriptionTxtBx.Text,
+                        discountType, discountValue,
+                        _targetTierCombo.SelectedItem as string ?? "All",
+                        minPurchase, maxDiscount,
+                        (int)_maxRedemptionsNud.Value,
+                        _startDatePicker.Value.Date, _endDatePicker.Value.Date,
+                        employeeId,
+                        branchId,
+                        requiredProductId, rewardProductId);
 
                     ChangedSomething = true;
                     DialogResult = DialogResult.OK;
@@ -971,16 +1111,18 @@ namespace CRM_Morcaffein.winforms.Views
                     if (_existing is null) return;
 
                     await _controller.UpdateAsync(
-                         _existing.CampaignId,
-                         _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
-                         _reasonTxtBx.Text,
-                         discountType, discountValue,
-                         _targetTierCombo.SelectedItem as string ?? "All",
-                         minPurchase, maxDiscount,
-                         (int)_maxRedemptionsNud.Value,
-                         _startDatePicker.Value.Date, _endDatePicker.Value.Date,
-                         employeeId,
-                         requiredProductId, rewardProductId);
+                        _existing.CampaignId,
+                        _nameTxtBx.Text, _categoryCombo.SelectedItem as string ?? PromoCategories.Seasonal,
+                        _reasonTxtBx.Text,
+                        _descriptionTxtBx.Text,
+                        discountType, discountValue,
+                        _targetTierCombo.SelectedItem as string ?? "All",
+                        minPurchase, maxDiscount,
+                        (int)_maxRedemptionsNud.Value,
+                        _startDatePicker.Value.Date, _endDatePicker.Value.Date,
+                        employeeId,
+                        branchId,
+                        requiredProductId, rewardProductId);
 
                     ChangedSomething = true;
                     DialogResult = DialogResult.OK;
@@ -999,8 +1141,6 @@ namespace CRM_Morcaffein.winforms.Views
 
         private void CancelBtn_Click(object? sender, EventArgs e)
         {
-            // Cancel from Create: close without saving.
-            // Cancel from Edit: go back to View (not close) — user was looking at a campaign.
             if (_mode == Mode.Edit && _existing is not null)
             {
                 _mode = Mode.View;
@@ -1039,10 +1179,6 @@ namespace CRM_Morcaffein.winforms.Views
                     await _controller.DeactivateAsync(_existing.CampaignId, employeeId);
 
                 ChangedSomething = true;
-
-                // Close the modal — the caller will reload the grid, so the card
-                // reflects the new status. Keeping the modal open with a stale view
-                // is more confusing than just closing.
                 DialogResult = DialogResult.OK;
                 Close();
             }
@@ -1054,4 +1190,4 @@ namespace CRM_Morcaffein.winforms.Views
             }
         }
     }
-}
+}   

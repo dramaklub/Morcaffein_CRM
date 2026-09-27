@@ -1,5 +1,5 @@
-﻿using CRM_Morcaffein.Controllers;
-using CRM_Morcaffein.Theme;
+﻿using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 using CRM_Morcaffein.winforms.Services.Api;
 
 namespace CRM_Morcaffein.winforms.Views
@@ -20,7 +20,7 @@ namespace CRM_Morcaffein.winforms.Views
     /// </summary>
     public class FrmCreateEmployee : Form
     {
-        private readonly EmployeeController _controller;
+        private readonly EmployeeService _controller;
 
         private TextBox _firstNameTxtBx = null!;
         private TextBox _lastNameTxtBx = null!;
@@ -46,7 +46,7 @@ namespace CRM_Morcaffein.winforms.Views
         // re-fetch from the API.
         private readonly List<BranchItem> _cachedBranches = new();
 
-        public FrmCreateEmployee(EmployeeController controller)
+        public FrmCreateEmployee(EmployeeService controller)
         {
             _controller = controller;
 

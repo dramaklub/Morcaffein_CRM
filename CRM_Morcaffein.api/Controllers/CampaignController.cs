@@ -1,6 +1,6 @@
-﻿using Bogus;
-using CRM_Morcaffein.api.DTOs;
+﻿using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.infrastructure.data;
 using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -23,6 +23,12 @@ namespace CRM_Morcaffein.api.Controllers
         // GET api/tenant/{companyId}/campaigns
         // Returns all currently-active campaigns (IsActive + within date range). The POS
         // path — Pending/Rejected/Inactive campaigns are excluded by the IsActive filter.
+        //
+        // NOTE: this endpoint does NOT filter by branch. Every active campaign is
+        // returned regardless of which branch it targets. The client is responsible
+        // for deciding which ones apply at the POS (a company-wide campaign with
+        // BranchId == null applies everywhere; a branch-scoped one applies at that
+        // branch only). Adding a server-side branch filter is a separate change.
         [HttpGet]
         public async Task<ActionResult<List<CampaignResponseDto>>> GetActiveCampaigns(int companyId)
         {
@@ -40,6 +46,7 @@ namespace CRM_Morcaffein.api.Controllers
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
                     Reason = c.Reason,
+                    Description = c.Description,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -54,6 +61,8 @@ namespace CRM_Morcaffein.api.Controllers
                     CreatedByName = c.Creator != null
                         ? (c.Creator.FirstName + " " + c.Creator.LastName).Trim()
                         : "—",
+                    BranchId = c.BranchId,
+                    BranchName = c.Branch != null ? c.Branch.BranchName : "All Branches",
                     DecidedBy = c.DecidedBy,
                     DecidedAt = c.DecidedAt,
                     DecisionNotes = c.DecisionNotes,
@@ -82,6 +91,7 @@ namespace CRM_Morcaffein.api.Controllers
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
                     Reason = c.Reason,
+                    Description = c.Description,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -96,6 +106,8 @@ namespace CRM_Morcaffein.api.Controllers
                     CreatedByName = c.Creator != null
                         ? (c.Creator.FirstName + " " + c.Creator.LastName).Trim()
                         : "—",
+                    BranchId = c.BranchId,
+                    BranchName = c.Branch != null ? c.Branch.BranchName : "All Branches",
                     DecidedBy = c.DecidedBy,
                     DecidedAt = c.DecidedAt,
                     DecisionNotes = c.DecisionNotes,
@@ -131,6 +143,7 @@ namespace CRM_Morcaffein.api.Controllers
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
                     Reason = c.Reason,
+                    Description = c.Description,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -145,6 +158,8 @@ namespace CRM_Morcaffein.api.Controllers
                     CreatedByName = c.Creator != null
                         ? (c.Creator.FirstName + " " + c.Creator.LastName).Trim()
                         : "—",
+                    BranchId = c.BranchId,
+                    BranchName = c.Branch != null ? c.Branch.BranchName : "All Branches",
                     DecidedBy = c.DecidedBy,
                     DecidedAt = c.DecidedAt,
                     DecisionNotes = c.DecisionNotes,
@@ -168,11 +183,11 @@ namespace CRM_Morcaffein.api.Controllers
             CreateCampaignRequest request)
         {
             var validationError = ValidateCampaignRequest(
-              request.PromoName, request.PromoCategory, request.Reason, request.DiscountType,
-              request.DiscountValue, request.TargetTier,
-              request.MinPurchaseAmount, request.MaxDiscountAmount,
-              request.MaxRedemptionsPerCustomer, request.StartDate, request.EndDate,
-              request.RequiredProductId, request.RewardProductId);
+                request.PromoName, request.PromoCategory, request.Reason, request.Description, request.DiscountType,
+                request.DiscountValue, request.TargetTier,
+                request.MinPurchaseAmount, request.MaxDiscountAmount,
+                request.MaxRedemptionsPerCustomer, request.StartDate, request.EndDate,
+                request.RequiredProductId, request.RewardProductId);
 
             if (validationError is not null)
                 return BadRequest(new { message = validationError });
@@ -189,6 +204,15 @@ namespace CRM_Morcaffein.api.Controllers
             if (!creator.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "Only managers can create campaigns." });
 
+            // Branch resolution. A pinned Manager must target their own branch;
+            // an all-branch Manager may target any branch or create a
+            // company-wide campaign (null).
+            var (resolvedBranchId, branchError) = await ResolveCampaignBranchAsync(
+                tenant, request.MadeBy, request.BranchId);
+
+            if (branchError is not null)
+                return StatusCode(403, new { message = branchError });
+
             if (IsB1T1(request.DiscountType))
             {
                 var productError = await ValidateB1T1ProductsAsync(tenant, request.RequiredProductId, request.RewardProductId);
@@ -196,14 +220,12 @@ namespace CRM_Morcaffein.api.Controllers
                     return BadRequest(new { message = productError });
             }
 
-            if (request.BranchId <= 0)
-                return BadRequest(new { message = "A valid branch is required." });
-
             var campaign = new Campaign
             {
                 PromoName = request.PromoName.Trim(),
                 PromoCategory = request.PromoCategory.Trim(),
                 Reason = request.Reason.Trim(),
+                Description = request.Description.Trim(),
                 DiscountType = request.DiscountType,
                 DiscountValue = IsB1T1(request.DiscountType) ? 0m : request.DiscountValue,
                 TargetTier = request.TargetTier,
@@ -215,7 +237,7 @@ namespace CRM_Morcaffein.api.Controllers
                 RequiredProductId = IsB1T1(request.DiscountType) ? request.RequiredProductId : null,
                 RewardProductId = IsB1T1(request.DiscountType) ? request.RewardProductId : null,
                 MadeBy = request.MadeBy,
-                BranchId = request.BranchId,
+                BranchId = resolvedBranchId,
                 Status = "Pending",
                 IsActive = false,
                 CreatedAt = DateTime.UtcNow,
@@ -233,8 +255,9 @@ namespace CRM_Morcaffein.api.Controllers
                 return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
             }
 
-            // Reload with the Creator nav so CreatedByName is populated in the response.
+            // Reload with the nav properties so the response has BranchName, CreatedByName, etc.
             await tenant.Entry(campaign).Reference(c => c.Creator).LoadAsync();
+            await tenant.Entry(campaign).Reference(c => c.Branch).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
@@ -249,7 +272,7 @@ namespace CRM_Morcaffein.api.Controllers
             UpdateCampaignRequest request)
         {
             var validationError = ValidateCampaignRequest(
-                request.PromoName, request.PromoCategory, request.Reason, request.DiscountType,
+                request.PromoName, request.PromoCategory, request.Reason, request.Description, request.DiscountType,
                 request.DiscountValue, request.TargetTier,
                 request.MinPurchaseAmount, request.MaxDiscountAmount,
                 request.MaxRedemptionsPerCustomer, request.StartDate, request.EndDate,
@@ -270,6 +293,12 @@ namespace CRM_Morcaffein.api.Controllers
             if (!editor.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "Only managers can edit campaigns." });
 
+            var (resolvedBranchId, branchError) = await ResolveCampaignBranchAsync(
+                tenant, request.MadeBy, request.BranchId);
+
+            if (branchError is not null)
+                return StatusCode(403, new { message = branchError });
+
             if (IsB1T1(request.DiscountType))
             {
                 var productError = await ValidateB1T1ProductsAsync(tenant, request.RequiredProductId, request.RewardProductId);
@@ -281,14 +310,11 @@ namespace CRM_Morcaffein.api.Controllers
             if (campaign is null)
                 return NotFound();
 
-            if (request.BranchId <= 0)
-                return BadRequest(new { message = "A valid branch is required." });
-
             campaign.PromoName = request.PromoName.Trim();
             campaign.PromoCategory = request.PromoCategory.Trim();
             campaign.Reason = request.Reason.Trim();
+            campaign.Description = request.Description.Trim();
             campaign.DiscountType = request.DiscountType;
-            campaign.BranchId = request.BranchId;
             campaign.DiscountValue = IsB1T1(request.DiscountType) ? 0m : request.DiscountValue;
             campaign.TargetTier = request.TargetTier;
             campaign.MinPurchaseAmount = request.MinPurchaseAmount;
@@ -298,6 +324,7 @@ namespace CRM_Morcaffein.api.Controllers
             campaign.EndDate = request.EndDate;
             campaign.RequiredProductId = IsB1T1(request.DiscountType) ? request.RequiredProductId : null;
             campaign.RewardProductId = IsB1T1(request.DiscountType) ? request.RewardProductId : null;
+            campaign.BranchId = resolvedBranchId;
             campaign.UpdatedAt = DateTime.UtcNow;
 
             // A Rejected campaign that's edited goes back to Pending — the Manager is
@@ -322,6 +349,7 @@ namespace CRM_Morcaffein.api.Controllers
             }
 
             await tenant.Entry(campaign).Reference(c => c.Creator).LoadAsync();
+            await tenant.Entry(campaign).Reference(c => c.Branch).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
@@ -351,8 +379,6 @@ namespace CRM_Morcaffein.api.Controllers
             if (campaign is null)
                 return NotFound();
 
-            // Pending campaigns are frozen until an Admin decides. Rejected campaigns
-            // must be edited (which resubmits them as Pending) before they can go live.
             if (campaign.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "Pending campaigns must be approved by an admin before they can go live." });
 
@@ -373,6 +399,7 @@ namespace CRM_Morcaffein.api.Controllers
             }
 
             await tenant.Entry(campaign).Reference(c => c.Creator).LoadAsync();
+            await tenant.Entry(campaign).Reference(c => c.Branch).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
@@ -419,6 +446,7 @@ namespace CRM_Morcaffein.api.Controllers
             }
 
             await tenant.Entry(campaign).Reference(c => c.Creator).LoadAsync();
+            await tenant.Entry(campaign).Reference(c => c.Branch).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
@@ -426,9 +454,6 @@ namespace CRM_Morcaffein.api.Controllers
         }
 
         // GET api/tenant/{companyId}/campaigns/pending
-        //
-        // Returns only Pending campaigns, for the Admin's Approvals tab. Ordered oldest
-        // first so the queue reads like a queue — oldest submission at the top.
         [HttpGet("pending")]
         public async Task<ActionResult<List<CampaignResponseDto>>> GetPendingCampaigns(int companyId)
         {
@@ -444,6 +469,7 @@ namespace CRM_Morcaffein.api.Controllers
                     PromoName = c.PromoName,
                     PromoCategory = c.PromoCategory,
                     Reason = c.Reason,
+                    Description = c.Description,
                     DiscountType = c.DiscountType,
                     DiscountValue = c.DiscountValue,
                     TargetTier = c.TargetTier,
@@ -458,6 +484,8 @@ namespace CRM_Morcaffein.api.Controllers
                     CreatedByName = c.Creator != null
                         ? (c.Creator.FirstName + " " + c.Creator.LastName).Trim()
                         : "—",
+                    BranchId = c.BranchId,
+                    BranchName = c.Branch != null ? c.Branch.BranchName : "All Branches",
                     DecidedBy = c.DecidedBy,
                     DecidedAt = c.DecidedAt,
                     DecisionNotes = c.DecisionNotes,
@@ -472,8 +500,6 @@ namespace CRM_Morcaffein.api.Controllers
         }
 
         // POST api/tenant/{companyId}/campaigns/{id}/approve
-        //
-        // Admin approves a Pending campaign. Flips it live and records the decision.
         [HttpPost("{id:int}/approve")]
         public async Task<ActionResult<CampaignResponseDto>> ApproveCampaign(
             int companyId,
@@ -517,6 +543,7 @@ namespace CRM_Morcaffein.api.Controllers
             }
 
             await tenant.Entry(campaign).Reference(c => c.Creator).LoadAsync();
+            await tenant.Entry(campaign).Reference(c => c.Branch).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
@@ -524,9 +551,6 @@ namespace CRM_Morcaffein.api.Controllers
         }
 
         // POST api/tenant/{companyId}/campaigns/{id}/reject
-        //
-        // Admin rejects a Pending campaign. Requires a reason. The campaign stays in the
-        // DB so the Manager can edit and resubmit it.
         [HttpPost("{id:int}/reject")]
         public async Task<ActionResult<CampaignResponseDto>> RejectCampaign(
             int companyId,
@@ -573,6 +597,7 @@ namespace CRM_Morcaffein.api.Controllers
             }
 
             await tenant.Entry(campaign).Reference(c => c.Creator).LoadAsync();
+            await tenant.Entry(campaign).Reference(c => c.Branch).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RequiredProduct).LoadAsync();
             await tenant.Entry(campaign).Reference(c => c.RewardProduct).LoadAsync();
 
@@ -582,7 +607,7 @@ namespace CRM_Morcaffein.api.Controllers
         // ---- helpers ----
 
         private static async Task<string?> ValidateB1T1ProductsAsync(
-            CRM_Morcaffein.infrastructure.data.TenantCrmDbContext tenant,
+            TenantCrmDbContext tenant,
             int? requiredProductId, int? rewardProductId)
         {
             if (!requiredProductId.HasValue || !rewardProductId.HasValue)
@@ -602,12 +627,61 @@ namespace CRM_Morcaffein.api.Controllers
         private static bool IsB1T1(string discountType) =>
             discountType.Equals("B1T1", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Validates and normalizes the BranchId for a campaign create/update.
+        ///
+        /// Rules:
+        ///   - Pinned Managers (Employee.BranchId != null) must target their
+        ///     own branch. Sending null or another branch is rejected.
+        ///   - All-branch Managers (Employee.BranchId == null) may send any
+        ///     valid branch, or null for a company-wide campaign.
+        ///   - Admins are treated as all-branch.
+        ///
+        /// Returns the resolved BranchId (null = company-wide) if valid, or
+        /// an error message string.
+        /// </summary>
+        private async Task<(int? BranchId, string? Error)> ResolveCampaignBranchAsync(
+            TenantCrmDbContext tenant,
+            int madeByEmployeeId,
+            int? requestedBranchId)
+        {
+            var employee = await tenant.Employees
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.EmployeeId == madeByEmployeeId);
+
+            if (employee is null)
+                return (null, "Creator not found.");
+
+            var isPinned = employee.BranchId.HasValue;
+
+            if (isPinned)
+            {
+                if (!requestedBranchId.HasValue)
+                    return (null, "Managers assigned to a single branch cannot create company-wide campaigns.");
+
+                if (requestedBranchId.Value != employee.BranchId!.Value)
+                    return (null, "Managers can only create campaigns for their own branch.");
+
+                return (employee.BranchId, null);
+            }
+
+            if (!requestedBranchId.HasValue)
+                return (null, null);
+
+            var branchExists = await tenant.Branches
+                .AnyAsync(b => b.BranchId == requestedBranchId.Value && b.IsActive);
+            if (!branchExists)
+                return (null, $"Branch {requestedBranchId.Value} not found or is inactive.");
+
+            return (requestedBranchId, null);
+        }
+
         private static string? ValidateCampaignRequest(
-    string promoName, string promoCategory, string reason, string discountType,
-    decimal discountValue, string targetTier,
-    decimal? minPurchase, decimal? maxDiscount,
-    int maxRedemptions, DateTime startDate, DateTime endDate,
-    int? requiredProductId, int? rewardProductId)
+            string promoName, string promoCategory, string reason, string description, string discountType,
+            decimal discountValue, string targetTier,
+            decimal? minPurchase, decimal? maxDiscount,
+            int maxRedemptions, DateTime startDate, DateTime endDate,
+            int? requiredProductId, int? rewardProductId)
         {
             if (string.IsNullOrWhiteSpace(promoName))
                 return "Promo name is required.";
@@ -617,6 +691,10 @@ namespace CRM_Morcaffein.api.Controllers
                 return "A reason for this campaign is required.";
             if (reason.Length > 250)
                 return "Reason cannot exceed 250 characters.";
+            if (string.IsNullOrWhiteSpace(description))
+                return "A message for customers is required.";
+            if (description.Length > 500)
+                return "Customer message cannot exceed 500 characters.";
             if (string.IsNullOrWhiteSpace(discountType))
                 return "Discount type is required.";
 
@@ -660,6 +738,7 @@ namespace CRM_Morcaffein.api.Controllers
             PromoName = c.PromoName,
             PromoCategory = c.PromoCategory,
             Reason = c.Reason,
+            Description = c.Description,
             DiscountType = c.DiscountType,
             DiscountValue = c.DiscountValue,
             TargetTier = c.TargetTier,
@@ -674,6 +753,8 @@ namespace CRM_Morcaffein.api.Controllers
             CreatedByName = c.Creator != null
                 ? (c.Creator.FirstName + " " + c.Creator.LastName).Trim()
                 : "—",
+            BranchId = c.BranchId,
+            BranchName = c.Branch != null ? c.Branch.BranchName : "All Branches",
             DecidedBy = c.DecidedBy,
             DecidedAt = c.DecidedAt,
             DecisionNotes = c.DecisionNotes,

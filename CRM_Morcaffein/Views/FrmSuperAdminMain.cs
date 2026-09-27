@@ -178,13 +178,9 @@ namespace CRM_Morcaffein.winforms.Views
         {
             var navItems = new List<(string Text, string IconFile, Action onClick)>
             {
-                ("Dashboard",     "Dashboard", () => ShowView(new PlaceholderView(
-                    "SuperAdmin Dashboard",
-                    "Platform overview. Coming soon."))),
-                ("Companies",     "Customers", () => ShowView(new SuperAdminCompaniesView())),
-                ("Subscriptions", "Approvals", () => ShowView(new PlaceholderView(
-                    "Subscriptions",
-                    "Subscription management. Coming soon."))),
+                ("Dashboard",            "Dashboard", () => ShowView(new SuperAdminDashboardView())),
+                ("Companies",            "Customers", () => ShowView(new SuperAdminCompaniesView())),
+                ("Terms",   "Approvals", () => ShowView(new TermsAndConditionsView())),
             };
 
             int y = 20;

@@ -15,6 +15,7 @@ namespace CRM_Morcaffein.infrastructure.data
         public DbSet<Subscription> Subscriptions => Set<Subscription>();
         public DbSet<CompanyUser> CompanyUsers => Set<CompanyUser>();
         public DbSet<SuperAdmin> SuperAdmins => Set<SuperAdmin>();
+        public DbSet<TermsAndConditions> TermsAndConditions => Set<TermsAndConditions>();
 
 
         public MasterCrmDbContext(DbContextOptions<MasterCrmDbContext> options) : base(options)
@@ -164,6 +165,29 @@ namespace CRM_Morcaffein.infrastructure.data
                 // Index on CompanyId because the "get current subscription for
                 // company N" query is the most common one.
                 entity.HasIndex(s => s.CompanyId);
+            });
+
+            builder.Entity<TermsAndConditions>(entity =>
+            {
+                entity.HasKey(t => t.TermsId);
+
+                entity.Property(t => t.Title)
+                      .HasMaxLength(200)
+                      .IsRequired();
+
+                entity.Property(t => t.Body)
+                      .IsRequired();     // nvarchar(max) — no length cap
+
+                entity.Property(t => t.Version)
+                      .HasMaxLength(20)
+                      .IsRequired();
+
+                entity.HasOne(t => t.Plan)
+                      .WithMany()
+                      .HasForeignKey(t => t.PlanId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasIndex(t => t.PlanId);
             });
 
             builder.Entity<SuperAdmin>(entity =>

@@ -214,6 +214,10 @@ namespace CRM_Morcaffein.winforms.Views
                     AddAlways("Approvals", "Approvals", () => new ApprovalsView());
                 }
 
+                // Branch management — gated by the Branching module. Only
+                // Full-tier tenants have it. Placed before Manage Users so
+                // the two "organizational setup" surfaces sit together.
+                AddIfEntitled("Branches", "Customers", "Branching", () => new BranchManagementView());
 
                 AddAlways("Manage Users", "User Mgmt", () => new ManageUsersView());
             }

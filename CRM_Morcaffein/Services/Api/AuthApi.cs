@@ -35,8 +35,7 @@ namespace CRM_Morcaffein.winforms.Services.Api
             HttpResponseMessage response;
             try
             {
-                response = await _http.PostAsJsonAsync(
-                    $"api/tenant/{ApiConfig.CompanyId}/auth/login", request);
+                response = await _http.PostAsJsonAsync("api/auth/login", request);
             }
             catch (HttpRequestException ex)
             {

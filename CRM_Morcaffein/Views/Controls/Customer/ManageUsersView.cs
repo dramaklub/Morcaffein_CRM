@@ -1,7 +1,7 @@
 ﻿using CRM_Morcaffein.api.DTOs;
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 using CRM_Morcaffein.winforms.Services.Api;
 using CRM_Morcaffein.winforms.Views;
 using CRM_Morcaffein.winforms.Views.Controls;
@@ -23,7 +23,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// </summary>
     public class ManageUsersView : UserControl
     {
-        private readonly EmployeeController _controller;
+        private readonly EmployeeService _controller;
         private readonly BindingSource _employeesBindingSource = new();
 
         private EmployeeResponseDto? _selectedEmployee;
@@ -89,7 +89,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public ManageUsersView()
         {
-            _controller = new EmployeeController();
+            _controller = new EmployeeService();
             BuildLayout();
             ConfigureGridColumns();
             Load += async (s, e) => await ReloadAsync();

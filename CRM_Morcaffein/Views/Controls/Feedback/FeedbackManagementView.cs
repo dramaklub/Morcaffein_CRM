@@ -1,7 +1,7 @@
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -16,7 +16,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// </summary>
     public partial class FeedbackManagementView : UserControl
     {
-        private readonly FeedbackController _controller;
+        private readonly FeedbackService _controller;
         private readonly BindingSource _ticketsBindingSource = new();
 
         private FeedbackResponseDto? _selectedTicket;
@@ -40,7 +40,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public FeedbackManagementView()
         {
-            _controller = new FeedbackController();
+            _controller = new FeedbackService();
             InitializeComponent();
 
             ConfigureTicketsGridColumns();
@@ -74,12 +74,25 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         ///
         /// One button — "Resolve Ticket". BonusPoints == 0 means "resolved, no gesture"
         /// (the dismiss case); > 0 awards that many points to the customer. Notes optional.
+        ///
+        /// The bonus-points spinner is only shown when the tenant's plan includes the
+        /// Actions module (Standard/Full). Basic tenants resolve feedback without any
+        /// points gesture — the concept doesn't exist in their subscription.
         /// </summary>
         private void BuildDecisionPanel()
         {
+            // Basic tenants have no loyalty — no "award points" concept exists. Hide
+            // the spinner and its helper text so the panel reads as "resolve + notes".
+            var canAwardPoints = EmployeeSession.Current?.HasModule("Actions") == true;
+
+            // Panel height depends on whether the points row is present.
+            //   With points:    200  (header + hint + points label + spinner + notes + resolve + error)
+            //   Without points: 152  (header + hint + notes + resolve + error)
+            var panelHeight = canAwardPoints ? 200 : 152;
+
             _decisionPanel = new Panel
             {
-                Size = new Size(420, 200),
+                Size = new Size(420, panelHeight),
                 BackColor = BrandPalette.SurfaceCard,
                 BorderStyle = BorderStyle.FixedSingle,
                 Visible = false,
@@ -87,61 +100,77 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             };
 
             const int inset = 14;
+            int y = 12;
 
             var header = new Label
             {
                 Text = "Resolve Ticket",
-                Location = new Point(inset, 12),
+                Location = new Point(inset, y),
                 AutoSize = true,
                 Font = BrandPalette.BrandFontBold(9.5f),
                 ForeColor = BrandPalette.NeutralText,
                 BackColor = Color.Transparent,
             };
+            _decisionPanel.Controls.Add(header);
+            y += 22;
 
             var hint = new Label
             {
-                Text = "0 points = resolved without a gesture. Up to 50 for a recovery.",
-                Location = new Point(inset, 34),
+                Text = canAwardPoints
+                    ? "0 points = resolved without a gesture. Up to 50 for a recovery."
+                    : "Mark this ticket as resolved. Notes are optional.",
+                Location = new Point(inset, y),
                 AutoSize = true,
                 Font = BrandPalette.BrandFontRegular(8f),
                 ForeColor = BrandPalette.NeutralTextMuted,
                 BackColor = Color.Transparent,
             };
+            _decisionPanel.Controls.Add(hint);
+            y += 26;
 
-            var pointsLabel = new Label
+            if (canAwardPoints)
             {
-                Text = "Bonus points",
-                Location = new Point(inset, 60),
-                AutoSize = true,
-                Font = BrandPalette.BrandFontRegular(9f),
-                ForeColor = BrandPalette.NeutralTextMuted,
-                BackColor = Color.Transparent,
-            };
+                var pointsLabel = new Label
+                {
+                    Text = "Bonus points",
+                    Location = new Point(inset, y),
+                    AutoSize = true,
+                    Font = BrandPalette.BrandFontRegular(9f),
+                    ForeColor = BrandPalette.NeutralTextMuted,
+                    BackColor = Color.Transparent,
+                };
 
-            _bonusPointsNud = new NumericUpDown
-            {
-                Location = new Point(inset, 80),
-                Size = new Size(100, 26),
-                Minimum = 0,
-                Maximum = MaxFeedbackBonusPoints,
-                Value = 0,
-                Font = BrandPalette.BrandFontRegular(9.5f),
-                TextAlign = HorizontalAlignment.Center,
-            };
+                _bonusPointsNud = new NumericUpDown
+                {
+                    Location = new Point(inset, y + 20),
+                    Size = new Size(100, 26),
+                    Minimum = 0,
+                    Maximum = MaxFeedbackBonusPoints,
+                    Value = 0,
+                    Font = BrandPalette.BrandFontRegular(9.5f),
+                    TextAlign = HorizontalAlignment.Center,
+                };
+
+                _decisionPanel.Controls.Add(_bonusPointsNud);
+                _decisionPanel.Controls.Add(pointsLabel);
+                y += 52;
+            }
 
             _decisionNotesTxtBx = new TextBox
             {
-                Location = new Point(inset, 112),
+                Location = new Point(inset, y),
                 Size = new Size(392, 26),
                 PlaceholderText = "Notes (optional)",
                 Font = BrandPalette.BrandFontRegular(9.5f),
                 BorderStyle = BorderStyle.FixedSingle,
             };
+            _decisionPanel.Controls.Add(_decisionNotesTxtBx);
+            y += 34;
 
             _resolveBtn = new Button
             {
                 Text = "Resolve Ticket",
-                Location = new Point(inset, 146),
+                Location = new Point(inset, y),
                 Size = new Size(392, 32),
                 FlatStyle = FlatStyle.Flat,
                 BackColor = BrandPalette.ButtonPrimaryFill,
@@ -151,10 +180,12 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             };
             _resolveBtn.FlatAppearance.BorderSize = 0;
             _resolveBtn.Click += ResolveBtn_Click;
+            _decisionPanel.Controls.Add(_resolveBtn);
+            y += 36;
 
             _decisionErrorLabel = new Label
             {
-                Location = new Point(inset, 182),
+                Location = new Point(inset, y),
                 Size = new Size(392, 20),
                 AutoSize = false,
                 Font = BrandPalette.BrandFontRegular(8.5f),
@@ -162,14 +193,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 BackColor = Color.Transparent,
                 Visible = false,
             };
-
             _decisionPanel.Controls.Add(_decisionErrorLabel);
-            _decisionPanel.Controls.Add(_resolveBtn);
-            _decisionPanel.Controls.Add(_decisionNotesTxtBx);
-            _decisionPanel.Controls.Add(_bonusPointsNud);
-            _decisionPanel.Controls.Add(pointsLabel);
-            _decisionPanel.Controls.Add(hint);
-            _decisionPanel.Controls.Add(header);
 
             drawerFlow.Controls.Add(_decisionPanel);
         }
@@ -381,7 +405,11 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 ticket.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase);
 
             // Reset panel state on every drawer refresh.
-            _bonusPointsNud.Value = 0;
+            // _bonusPointsNud is null for Basic tenants (no Actions module),
+            // so guard it. Same for anything else added conditionally later.
+            if (_bonusPointsNud is not null)
+                _bonusPointsNud.Value = 0;
+
             _decisionNotesTxtBx.Text = string.Empty;
             _decisionErrorLabel.Text = string.Empty;
             _decisionErrorLabel.Visible = false;
@@ -393,7 +421,12 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _decisionErrorLabel.Text = string.Empty;
             _decisionErrorLabel.Visible = false;
 
-            var bonus = (int)_bonusPointsNud.Value;
+            // Basic tenants have no bonus-points spinner — send 0. The API also
+            // rejects any positive value from a tenant without the Actions
+            // module, so this is defense in depth rather than a trust boundary.
+            var bonus = _bonusPointsNud is not null
+                ? (int)_bonusPointsNud.Value
+                : 0;
             var notes = string.IsNullOrWhiteSpace(_decisionNotesTxtBx.Text)
                 ? null
                 : _decisionNotesTxtBx.Text.Trim();

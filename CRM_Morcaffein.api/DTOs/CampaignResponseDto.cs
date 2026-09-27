@@ -16,7 +16,11 @@ public class CampaignResponseDto
     public bool IsActive { get; set; }
     public string Status { get; set; } = string.Empty;
 
+    public int? BranchId { get; set; }
+    public string? BranchName { get; set; }   // resolved server-side; "All Branches" if null
+
     public string Reason { get; set; } = string.Empty;
+    public string? Description { get; set; }
 
     // B1T1 targeting — set only when DiscountType is "B1T1". Names are resolved
     // server-side so the client doesn't need a second product lookup to display them.

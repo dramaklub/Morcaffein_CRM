@@ -70,6 +70,83 @@ namespace CRM_Morcaffein.api.Controllers
 
             return Ok(plans);
         }
+        // GET api/superadmin/dashboard
+        //
+        // One combined payload for the SuperAdmin dashboard: platform summary,
+        // companies-per-plan distribution, and the most recent subscription
+        // assignments. All three queries run against the master DB only.
+        [HttpGet("dashboard")]
+        public async Task<ActionResult<SuperAdminDashboardDto>> GetDashboard()
+        {
+            // ---- 1. Summary numbers ----
+            var companies = await _master.Companies
+                .AsNoTracking()
+                .Include(c => c.CurrentPlan)
+                .ToListAsync();
+
+            var totalCompanies = companies.Count;
+            var activeSubscriptions = companies.Count(c => c.CurrentPlanId.HasValue);
+            var mrr = companies
+                .Where(c => c.CurrentPlanId.HasValue && c.CurrentPlan is not null)
+                .Sum(c => c.CurrentPlan!.MonthlyPrice);
+
+            // ---- 2. Companies per plan ----
+            // Group by the current plan, plus a synthetic "No Plan" bucket
+            // for companies with CurrentPlanId == null. Ordered by plan
+            // so the chart legend reads consistently (Basic, Standard, Full).
+            var perPlan = companies
+                .Where(c => c.CurrentPlanId.HasValue && c.CurrentPlan is not null)
+                .GroupBy(c => new { c.CurrentPlanId, c.CurrentPlan!.Name })
+                .Select(g => new CompaniesPerPlanPoint
+                {
+                    PlanId = g.Key.CurrentPlanId,
+                    PlanName = g.Key.Name,
+                    CompanyCount = g.Count(),
+                })
+                .OrderBy(p => p.PlanId)
+                .ToList();
+
+            // No-plan bucket — always included, even if zero, so the chart
+            // renders the fourth bar consistently.
+            var noPlanCount = companies.Count(c => !c.CurrentPlanId.HasValue);
+            perPlan.Add(new CompaniesPerPlanPoint
+            {
+                PlanId = null,
+                PlanName = "No Plan",
+                CompanyCount = noPlanCount,
+            });
+
+            // ---- 3. Recent subscriptions ----
+            var recent = await _master.Subscriptions
+                .AsNoTracking()
+                .Include(s => s.Company)
+                .Include(s => s.Plan)
+                .OrderByDescending(s => s.StartedAt)
+                .Take(10)
+                .Select(s => new RecentSubscriptionPoint
+                {
+                    SubscriptionId = s.SubscriptionId,
+                    CompanyName = s.Company != null ? s.Company.CompanyName : "—",
+                    PlanName = s.Plan != null ? s.Plan.Name : "—",
+                    PlanMonthlyPrice = s.Plan != null ? s.Plan.MonthlyPrice : 0m,
+                    StartedAt = s.StartedAt,
+                    TermsAcceptedBy = s.TermsAcceptedBy,
+                })
+                .ToListAsync();
+
+            // ---- Compose ----
+            return Ok(new SuperAdminDashboardDto
+            {
+                Summary = new SuperAdminDashboardSummary
+                {
+                    TotalCompanies = totalCompanies,
+                    ActiveSubscriptions = activeSubscriptions,
+                    MonthlyRecurringRevenue = mrr,
+                },
+                CompaniesPerPlan = perPlan,
+                RecentSubscriptions = recent,
+            });
+        }
 
         // POST api/superadmin/companies/{id}/assign-plan
         //
@@ -184,6 +261,63 @@ namespace CRM_Morcaffein.api.Controllers
                 .ToListAsync();
 
             return Ok(subscriptions);
+        }
+
+        // GET api/superadmin/terms
+        //
+        // Returns the list of T&C documents — one per plan. No body text;
+        // the client fetches the full document per-card on click.
+        [HttpGet("terms")]
+        public async Task<ActionResult<List<TermsSummaryDto>>> GetTermsList()
+        {
+            var terms = await _master.TermsAndConditions
+                .AsNoTracking()
+                .Include(t => t.Plan)
+                .OrderBy(t => t.PlanId)
+                .Select(t => new TermsSummaryDto
+                {
+                    TermsId = t.TermsId,
+                    PlanId = t.PlanId,
+                    PlanName = t.Plan != null ? t.Plan.Name : null,
+                    Title = t.Title,
+                    Version = t.Version,
+                    EffectiveFrom = t.EffectiveFrom,
+                    CreatedAt = t.CreatedAt,
+                    UpdatedAt = t.UpdatedAt,
+                })
+                .ToListAsync();
+
+            return Ok(terms);
+        }
+
+        // GET api/superadmin/terms/{id}
+        //
+        // Returns a full T&C document including the body text.
+        [HttpGet("terms/{id:int}")]
+        public async Task<ActionResult<TermsDetailDto>> GetTermsDetail(int id)
+        {
+            var terms = await _master.TermsAndConditions
+                .AsNoTracking()
+                .Include(t => t.Plan)
+                .Where(t => t.TermsId == id)
+                .Select(t => new TermsDetailDto
+                {
+                    TermsId = t.TermsId,
+                    PlanId = t.PlanId,
+                    PlanName = t.Plan != null ? t.Plan.Name : null,
+                    Title = t.Title,
+                    Body = t.Body,
+                    Version = t.Version,
+                    EffectiveFrom = t.EffectiveFrom,
+                    CreatedAt = t.CreatedAt,
+                    UpdatedAt = t.UpdatedAt,
+                })
+                .FirstOrDefaultAsync();
+
+            if (terms is null)
+                return NotFound(new { message = $"Terms document {id} not found." });
+
+            return Ok(terms);
         }
 
         // ---- helpers ----

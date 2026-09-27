@@ -1,6 +1,6 @@
 using CRM_Morcaffein.api.DTOs;
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -9,7 +9,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// </summary>
     public class PeakHoursHeatmapControl : UserControl
     {
-        private readonly DashboardController _controller;
+        private readonly DashboardService _controller;
         private Label _titleLabel = null!;
         private Label _subtitleLabel = null!;
         private Label _errorLabel = null!;
@@ -28,7 +28,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public PeakHoursHeatmapControl()
         {
-            _controller = new DashboardController();
+            _controller = new DashboardService();
             BuildLayout();
         }
 

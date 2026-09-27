@@ -1,4 +1,3 @@
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.domain.entities;
 using CRM_Morcaffein.Session;
@@ -38,7 +37,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         // ---------------------------------------------------------------------
         // State
         // ---------------------------------------------------------------------
-        private TransactionController? _controller;
+        private TransactionService? _controller;
         private string _selectedCategory = string.Empty;
         private string _lastProductFilterSignature = string.Empty;
 
@@ -912,7 +911,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 var campaignDtos = await CampaignCache.GetActiveCampaignsAsync();
                 var campaigns = campaignDtos.Select(MapToCampaignEntity).ToList();
 
-                _controller = new TransactionController(
+                _controller = new TransactionService(
                     _cachedProducts!,
                     _cachedCategories!,
                     _cachedModifiers!,

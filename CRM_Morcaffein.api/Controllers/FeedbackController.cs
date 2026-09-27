@@ -1,5 +1,6 @@
 ﻿using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.infrastructure.data;
 using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,10 +12,14 @@ namespace CRM_Morcaffein.api.Controllers
     public class FeedbackController : ControllerBase
     {
         private readonly ITenantDbContextFactory _tenantFactory;
+        private readonly MasterCrmDbContext _master;
 
-        public FeedbackController(ITenantDbContextFactory tenantFactory)
+        public FeedbackController(
+            ITenantDbContextFactory tenantFactory,
+            MasterCrmDbContext master)
         {
             _tenantFactory = tenantFactory;
+            _master = master;
         }
 
         // GET api/tenant/{companyId}/feedback?search=...
@@ -316,6 +321,31 @@ namespace CRM_Morcaffein.api.Controllers
 
             if (request.BonusPoints > 50)
                 return BadRequest(new { message = "Bonus points cannot exceed 50." });
+
+            // ---- Entitlement gate ----
+            // Awarding points is a loyalty action, gated by the Actions module.
+            // Basic tenants don't have it, so the client hides the spinner. If a
+            // crafted request still sends BonusPoints > 0, reject it here — the
+            // client-side hiding is UX, this is the actual enforcement.
+            if (request.BonusPoints > 0)
+            {
+                var company = await _master.Companies
+                    .AsNoTracking()
+                    .Include(c => c.CurrentPlan)
+                    .FirstOrDefaultAsync(c => c.CompanyId == companyId);
+
+                var hasActions = company?.CurrentPlan?.ModulesCsv
+                    ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Contains("Actions", StringComparer.OrdinalIgnoreCase) == true;
+
+                if (!hasActions)
+                {
+                    return BadRequest(new
+                    {
+                        message = "This tenant's plan does not include loyalty features. Bonus points cannot be awarded."
+                    });
+                }
+            }
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 

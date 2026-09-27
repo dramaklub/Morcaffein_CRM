@@ -1,7 +1,7 @@
-﻿using CRM_Morcaffein.Controllers;
-using CRM_Morcaffein.api.DTOs;
+﻿using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -22,12 +22,20 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private const int CardMargin = 8;
         private const int RowHeight = CardHeight + CardMargin * 2;   // 216
 
-        private readonly CampaignController _controller;
+        private readonly CampaignService _controller;
 
         // Header
         private Panel _cardHeaderPanel = null!;
         private TextBox _searchTxtBx = null!;
         private Button _newCampaignBtn = null!;
+
+        // Status filter row — sits below the search box inside the card header.
+        // Purely client-side: filters the already-loaded _allCampaigns list.
+        private Panel _statusFilterRow = null!;
+        private ComboBox _statusFilterCombo = null!;
+        private const string StatusFilterAllOption = "All Statuses";
+        private static readonly string[] StatusFilterOptions =
+            { "Active", "Pending", "Rejected", "Inactive" };
 
         // Card grid (mirrors TransactionView's drinks area)
         private Panel _cardsScrollHost = null!;
@@ -45,7 +53,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public CampaignManagementView()
         {
-            _controller = new CampaignController();
+            _controller = new CampaignService();
             BuildLayout();
             Load += async (s, e) => await ReloadAsync();
         }
@@ -84,7 +92,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _cardHeaderPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 60,
+                Height = 92,
                 BackColor = BrandPalette.SurfacePrimary,
             };
 
@@ -131,8 +139,12 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 BackColor = BrandPalette.Border,
             };
 
+            // ---- Status filter row ----
+            BuildStatusFilterRow();
+
             _cardHeaderPanel.Controls.Add(_newCampaignBtn);
             _cardHeaderPanel.Controls.Add(_searchTxtBx);
+            _cardHeaderPanel.Controls.Add(_statusFilterRow);
             _cardHeaderPanel.Controls.Add(headerDivider);
 
             // Reposition the button to hug the right edge whenever the header resizes.
@@ -187,6 +199,69 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             Controls.Add(cardOuterPanel);
         }
 
+        /// <summary>
+        /// Builds the "Filter by Status:" row that sits below the search box in the
+        /// card header. Same shape as CustomerManagementView and FeedbackManagementView:
+        /// a small muted label, then a dropdown, positions computed from the label's
+        /// measured width so they can't collide at any DPI.
+        ///
+        /// Purely client-side — the dropdown's SelectedIndexChanged re-renders the
+        /// already-loaded _allCampaigns list. No API round trip.
+        /// </summary>
+        private void BuildStatusFilterRow()
+        {
+            _statusFilterRow = new Panel
+            {
+                Location = new Point(16, 52),
+                Size = new Size(360, 30),
+                BackColor = BrandPalette.SurfacePrimary,
+            };
+
+            var label = new Label
+            {
+                Text = "Filter by Status:",
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = Color.Transparent,
+            };
+
+            _statusFilterCombo = new ComboBox
+            {
+                Size = new Size(180, 26),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+            };
+
+            _statusFilterCombo.Items.Add(StatusFilterAllOption);
+            foreach (var s in StatusFilterOptions)
+                _statusFilterCombo.Items.Add(s);
+
+            // Default to "All Statuses" — a Manager wants to see their whole history.
+            _statusFilterCombo.SelectedItem = StatusFilterAllOption;
+
+            var labelWidth = TextRenderer.MeasureText(label.Text, label.Font).Width;
+            label.Left = 0;
+            label.Top = (30 - label.Height) / 2;
+
+            _statusFilterCombo.Left = labelWidth + 12;
+            _statusFilterCombo.Top = (30 - _statusFilterCombo.Height) / 2;
+
+            _statusFilterCombo.SelectedIndexChanged += (s, e) => RefreshCardsPanel();
+
+            _statusFilterRow.Controls.Add(_statusFilterCombo);
+            _statusFilterRow.Controls.Add(label);
+        }
+
+        /// <summary>
+        /// The currently-selected status filter, or null when "All Statuses" is picked.
+        /// Null means "no status filter" — every campaign is included.
+        /// </summary>
+        private string? SelectedStatusFilter =>
+            _statusFilterCombo?.SelectedItem is string s && s != StatusFilterAllOption
+                ? s
+                : null;
+
         private void SyncCardsGridWidth()
         {
             if (_cardsScrollHost is null || _cardsGrid is null)
@@ -228,7 +303,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private void RefreshCardsPanel()
         {
             var searchTerm = _searchTxtBx.Text?.Trim() ?? string.Empty;
-            var signature = $"campaigns|{searchTerm}";
+            var statusFilter = SelectedStatusFilter;
+            var signature = $"campaigns|{searchTerm}|{statusFilter ?? "*"}";
 
             if (signature == _lastFilterSignature && _cardsGrid.Controls.Count > 0)
                 return;
@@ -242,15 +318,28 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _cardsGrid.RowStyles.Clear();
                 _cardsGrid.RowCount = 0;
 
-                // Filter: name or category contains the search term (case-insensitive).
-                var filtered = string.IsNullOrWhiteSpace(searchTerm)
-                    ? _allCampaigns
-                    : _allCampaigns.Where(c =>
-                        c.PromoName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                        c.PromoCategory.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-                      .ToList();
+                // Apply status filter first (drop non-matching statuses), then
+                // the search term (name / category substring). Both filters
+                // AND together — same convention as CustomerManagementView and
+                // FeedbackManagementView.
+                IEnumerable<CampaignResponseDto> filtered = _allCampaigns;
 
-                if (filtered.Count == 0)
+                if (statusFilter is not null)
+                {
+                    filtered = filtered.Where(c =>
+                        string.Equals(c.Status, statusFilter, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    filtered = filtered.Where(c =>
+                        c.PromoName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                        c.PromoCategory.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+                }
+
+                var filteredList = filtered.ToList();
+
+                if (filteredList.Count == 0)
                 {
                     _cardsGrid.RowCount = 1;
                     _cardsGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
@@ -264,7 +353,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                     return;
                 }
 
-                var rows = (filtered.Count + CampaignColumnCount - 1) / CampaignColumnCount;
+                var rows = (filteredList.Count + CampaignColumnCount - 1) / CampaignColumnCount;
 
                 for (int r = 0; r < rows; r++)
                     _cardsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, RowHeight));
@@ -274,9 +363,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _cardsGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
                 _cardsGrid.RowCount = rows + 1;
 
-                for (int i = 0; i < filtered.Count; i++)
+                for (int i = 0; i < filteredList.Count; i++)
                 {
-                    var campaign = filtered[i];
+                    var campaign = filteredList[i];
                     var card = new CampaignCardControl(campaign)
                     {
                         Dock = DockStyle.Fill,

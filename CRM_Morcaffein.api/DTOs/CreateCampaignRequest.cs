@@ -6,6 +6,12 @@ public class CreateCampaignRequest
     public string PromoCategory { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Customer-facing message included in the retention email when this
+    /// campaign is approved. Required on create/update.
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
+
     /// <summary>"Percentage", "FixedAmount", or "B1T1".</summary>
     public string DiscountType { get; set; } = "Percentage";
 
@@ -36,7 +42,11 @@ public class CreateCampaignRequest
     /// on the Campaigns table today. Phase 3 makes this nullable so "all branches"
     /// campaigns become valid — at which point the type changes to int?.
     /// </summary>
-    public int BranchId { get; set; }
+    /// <summary>
+    /// Target branch. null = company-wide. Pinned Managers cannot send null
+    /// or a branch other than their own; enforcement is in the controller.
+    /// </summary>
+    public int? BranchId { get; set; }
 }
 
 public class UpdateCampaignRequest
@@ -44,6 +54,12 @@ public class UpdateCampaignRequest
     public string PromoName { get; set; } = string.Empty;
     public string PromoCategory { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Customer-facing message included in the retention email when this
+    /// campaign is approved. Required on create/update.
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
     public string DiscountType { get; set; } = "Percentage";
     public decimal DiscountValue { get; set; }
     public string TargetTier { get; set; } = "All";
@@ -63,5 +79,9 @@ public class UpdateCampaignRequest
     /// on the Campaigns table today. Phase 3 makes this nullable so "all branches"
     /// campaigns become valid — at which point the type changes to int?.
     /// </summary>
-    public int BranchId { get; set; }
+    /// <summary>
+    /// Target branch. null = company-wide. Pinned Managers cannot send null
+    /// or a branch other than their own; enforcement is in the controller.
+    /// </summary>
+    public int? BranchId { get; set; }
 }

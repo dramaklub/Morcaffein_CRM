@@ -1,5 +1,5 @@
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views
 {
@@ -9,12 +9,12 @@ namespace CRM_Morcaffein.winforms.Views
     /// </summary>
     public partial class FrmCustomerOnboarding : Form
     {
-        private readonly CustomerController _controller;
+        private readonly CustomerService _controller;
         private DateTime? _birthday;
 
         public CustomerResponseDto? CreatedCustomer { get; private set; }
 
-        public FrmCustomerOnboarding(CustomerController controller)
+        public FrmCustomerOnboarding(CustomerService controller)
         {
             _controller = controller;
             InitializeComponent();

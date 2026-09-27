@@ -1,4 +1,3 @@
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
@@ -12,7 +11,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// </summary>
     public partial class CustomerManagementView : UserControl
     {
-        private readonly CustomerController _controller;
+        private readonly CustomerService _controller;
         private readonly BindingSource _customersBindingSource = new();
         private PaginationControl pagination = null!;
 
@@ -51,7 +50,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public CustomerManagementView()
         {
-            _controller = new CustomerController();
+            _controller = new CustomerService();
             InitializeComponent();
 
             ConfigureCustomersGridColumns();

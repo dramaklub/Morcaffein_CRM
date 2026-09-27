@@ -89,19 +89,44 @@ Content-Type: application/json
 GET http://localhost:5035/api/superadmin/companies/1/subscriptions
 Authorization: Bearer {{saLogin.response.body.$.token}}
 
-### Manager Login
-# @name login
-POST http://localhost:5035/api/tenant/1/auth/login
+
+### Tenant-agnostic login
+# @name basicLogin
+POST http://localhost:5035/api/auth/login
 Content-Type: application/json
 
 {
-  "username": "deshaun.waters",
+  "username": "trent.windler",
   "password": "password123"
 }
 
-### Admin Login
-# @name login
-POST http://localhost:5035/api/tenant/1/auth/login
+###
+POST http://localhost:5035/api/tenant/3/feedback/90/resolve
+Authorization: Bearer {{basicLogin.response.body.$.token}}
+Content-Type: application/json
+
+{
+  "decidedBy": 12,
+  "bonusPoints": 10,
+  "notes": "test"
+}
+
+###
+
+###
+#@name adminLogin
+POST http://localhost:5035/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "jason.kub",
+  "password": "password123"
+}
+
+###
+#Log in as a Tenant C Admin
+#@name basicAdminLogin
+POST http://localhost:5035/api/auth/login
 Content-Type: application/json
 
 {
@@ -109,16 +134,21 @@ Content-Type: application/json
   "password": "password123"
 }
 
-### Barista Login
-POST http://localhost:5035/api/tenant/1/auth/login
+### Basic tenant tries to create — should be 400 with the plan message
+POST http://localhost:5035/api/tenant/3/branches
+Authorization: Bearer {{basicAdminLogin.response.body.$.token}}
 Content-Type: application/json
 
 {
-  "username": "renz.arriola",
-  "password": "password123"
+  "branchName": "Rogue Branch",
+  "address": ""
 }
 
-### SuperAdmin login (need a token)
+### Get all campaigns for Tenant A — new rows should have branchId/branchName
+GET http://localhost:5035/api/tenant/1/campaigns/manage
+Authorization: Bearer {{adminLogin.response.body.$.token}}
+
+### Superadmin login
 # @name saLogin
 POST http://localhost:5035/api/superadmin/auth/login
 Content-Type: application/json
@@ -128,10 +158,10 @@ Content-Type: application/json
   "password": "password123"
 }
 
-### Recent employees — Tenant 3
-GET http://localhost:5035/api/tenant/3/dashboard/recent-employees?limit=5
-Authorization: Bearer {{login.response.body.$.token}}
+### Terms list — should return 3 rows
+GET http://localhost:5035/api/superadmin/terms
+Authorization: Bearer {{saLogin.response.body.$.token}}
 
-### Recent feedback — Tenant 3
-GET http://localhost:5035/api/tenant/3/dashboard/recent-feedback?limit=5
-Authorization: Bearer {{login.response.body.$.token}}
+### Terms detail for id=1
+GET http://localhost:5035/api/superadmin/terms/1
+Authorization: Bearer {{saLogin.response.body.$.token}}

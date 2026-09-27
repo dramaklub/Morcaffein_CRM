@@ -40,7 +40,23 @@ public class Campaign : BaseEntity
     /// </summary>
     public string Reason { get; set; } = string.Empty;
 
-    public int BranchId { get; set; }
+    /// <summary>
+    /// The customer-facing message that goes into the retention email when
+    /// this campaign is approved. Distinct from Reason (internal, why the
+    /// Manager created it) — this is the text the customer actually reads.
+    /// Nullable at the DB level so pre-existing campaigns survive the
+    /// migration; required by the API on create/update going forward.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// The branch this campaign targets.
+    ///   null  = company-wide (redeemable at every branch)
+    ///   value = scoped to that specific branch
+    /// Pinned Managers can only create campaigns for their own branch
+    /// (never null). All-branch Managers can create either.
+    /// </summary>
+    public int? BranchId { get; set; }
     public virtual Branch? Branch { get; set; }
 
     public string Status { get; set; } = "Active";

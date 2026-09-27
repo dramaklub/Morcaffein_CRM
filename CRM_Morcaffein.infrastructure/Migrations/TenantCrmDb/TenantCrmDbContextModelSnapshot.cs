@@ -62,7 +62,7 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CampaignId"));
 
-                    b.Property<int>("BranchId")
+                    b.Property<int?>("BranchId")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("CreatedAt")
@@ -75,6 +75,10 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     b.Property<string>("DecisionNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
@@ -998,8 +1002,7 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.HasOne("CRM_Morcaffein.domain.entities.Branch", "Branch")
                         .WithMany()
                         .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("CRM_Morcaffein.domain.entities.Employee", "Decider")
                         .WithMany()

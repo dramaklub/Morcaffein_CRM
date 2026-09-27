@@ -60,6 +60,31 @@ namespace CRM_Morcaffein.winforms.Services.Api
             var result = await response.Content.ReadFromJsonAsync<List<SubscriptionResponseDto>>();
             return result ?? new List<SubscriptionResponseDto>();
         }
+
+        public async Task<SuperAdminDashboardDto> GetDashboardAsync()
+        {
+            var response = await _http.GetAsync("api/superadmin/dashboard");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<SuperAdminDashboardDto>();
+            return result ?? new SuperAdminDashboardDto();
+        }
+        // GET api/superadmin/terms
+        public async Task<List<TermsSummaryDto>> GetTermsListAsync()
+        {
+            var response = await _http.GetAsync("api/superadmin/terms");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<List<TermsSummaryDto>>();
+            return result ?? new List<TermsSummaryDto>();
+        }
+
+        // GET api/superadmin/terms/{id}
+        public async Task<TermsDetailDto> GetTermsDetailAsync(int termsId)
+        {
+            var response = await _http.GetAsync($"api/superadmin/terms/{termsId}");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<TermsDetailDto>();
+            return result ?? new TermsDetailDto();
+        }
         private static async Task EnsureSuccess(HttpResponseMessage response)
         {
             if (response.IsSuccessStatusCode) return;

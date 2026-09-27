@@ -1,6 +1,6 @@
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views
 {
@@ -14,7 +14,7 @@ namespace CRM_Morcaffein.winforms.Views
     /// </summary>
     public partial class FrmLogFeedback : Form
     {
-        private readonly FeedbackController _controller;
+        private readonly FeedbackService _controller;
         private readonly int _loggedByEmployeeId;
 
         private CustomerResponseDto? _selectedCustomer;
@@ -23,7 +23,7 @@ namespace CRM_Morcaffein.winforms.Views
 
         public FeedbackResponseDto? CreatedFeedback { get; private set; }
 
-        public FrmLogFeedback(FeedbackController controller, int loggedByEmployeeId)
+        public FrmLogFeedback(FeedbackService controller, int loggedByEmployeeId)
         {
             _controller = controller;
             _loggedByEmployeeId = loggedByEmployeeId;

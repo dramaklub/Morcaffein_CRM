@@ -1,7 +1,7 @@
-﻿using CRM_Morcaffein.Controllers;
-using CRM_Morcaffein.api.DTOs;
+﻿using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -18,7 +18,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     /// </summary>
     public class ApprovalsView : UserControl
     {
-        private readonly CampaignController _controller;
+        private readonly CampaignService _controller;
 
         // ---- Header ----
         private Panel _headerPanel = null!;
@@ -75,7 +75,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public ApprovalsView()
         {
-            _controller = new CampaignController();
+            _controller = new CampaignService();
             BuildLayout();
             Load += async (s, e) => await ReloadAsync();
         }

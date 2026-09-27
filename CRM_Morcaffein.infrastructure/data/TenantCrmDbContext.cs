@@ -179,9 +179,9 @@ public class TenantCrmDbContext : IdentityDbContext
             entity.Property(c => c.PromoCategory).HasMaxLength(100).IsRequired();
             entity.Property(c => c.Status).HasMaxLength(50).IsRequired();
             entity.Property(c => c.Reason).HasMaxLength(250).IsRequired().HasDefaultValue("");
+            entity.Property(c => c.Description).HasMaxLength(500);
             entity.Property(c => c.DecisionNotes).HasMaxLength(500);
             entity.Property(c => c.DiscountValue).HasPrecision(18, 2);
-            entity.Property(c => c.BranchId).IsRequired();
 
             entity.HasOne(c => c.Creator)
                   .WithMany()

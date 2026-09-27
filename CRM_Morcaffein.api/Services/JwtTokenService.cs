@@ -14,7 +14,7 @@ namespace CRM_Morcaffein.api.Services
     {
         private readonly string _secret;
         private readonly string _issuer;
-        private readonly string _audience;
+        private readonly string _audience;  
         private readonly int _expiryHours;
 
         public JwtTokenService(IConfiguration configuration)

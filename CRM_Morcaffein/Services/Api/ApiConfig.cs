@@ -3,7 +3,18 @@
     public static class ApiConfig
     {
         public const string BaseUrl = "http://localhost:5035";
-        public const int CompanyId = 3;
+        /// <summary>
+        /// The tenant this session is talking to. Set at login from the
+        /// login response's companyId. Previously a hardcoded const = 1,
+        /// which meant every login hit Tenant A regardless of which
+        /// username was entered. Now dynamic — resolved by the server
+        /// from the CompanyUsers routing table.
+        ///
+        /// Reads before login (rare — some early boot code) will see 0,
+        /// which is invalid and will produce a clear "Company 0 not
+        /// found" error rather than silently hitting the wrong tenant.
+        /// </summary>
+        public static int CompanyId { get; set; } = 1;
 
         /// <summary>
         /// The JWT for the currently logged-in employee. Set by FrmLogin after a
@@ -30,6 +41,7 @@
             AuthToken = null;
             IsSuperAdminSession = false;
             SuperAdminName = null;
+            CompanyId = 1;   // reset to default on logout
         }
     }
 }

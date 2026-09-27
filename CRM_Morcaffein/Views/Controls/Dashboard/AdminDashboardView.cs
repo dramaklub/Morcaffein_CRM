@@ -1,7 +1,7 @@
 using CRM_Morcaffein.api.DTOs;
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Theme;
 using CRM_Morcaffein.Session;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -38,7 +38,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         public event EventHandler? NavigateToManageUsersRequested;
 
 
-        private readonly DashboardController _controller;
+        private readonly DashboardService _controller;
 
         private DashboardDateRangeFilterControl _dateFilter = null!;
         private Button _exportBtn = null!;
@@ -68,7 +68,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public AdminDashboardView()
         {
-            _controller = new DashboardController();
+            _controller = new DashboardService();
             MinimumSize = new Size(600, 400);
 
             SuspendLayout();
@@ -433,7 +433,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _exportBtn.Enabled = false;
                 _exportBtn.Text = "Generating…";
 
-                var report = new ReportController();
+                var report = new ReportService();
                 var bytes = isLedger
                     ? await report.GenerateTransactionLedgerAsync(days)
                     : await report.GenerateAdminReportAsync(days);

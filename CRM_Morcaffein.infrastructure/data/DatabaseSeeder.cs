@@ -238,7 +238,7 @@ namespace CRM_Morcaffein.infrastructure.Data
                     "Student Discount", "Flash Friday", "Iced Coffee Week",
                     "Matcha Madness", "Espresso Happy Hour", "Ube Season"))
                 .RuleFor(c => c.PromoCategory, f => f.PickRandom("Seasonal", "Loyalty", "Birthday", "Inactive"))
-                .RuleFor(c => c.Reason, f => f.PickRandom(
+                                .RuleFor(c => c.Reason, f => f.PickRandom(
                     "Weekend volume push", "Slow Tuesday traffic boost",
                     "Clear remaining matcha stock before new shipment",
                     "Reward loyal customers after positive feedback",
@@ -247,6 +247,17 @@ namespace CRM_Morcaffein.infrastructure.Data
                     "Holiday season customer appreciation",
                     "Push underperforming product line",
                     "Increase average order value through bundling"))
+                .RuleFor(c => c.Description, f => f.PickRandom(
+                    "Come by this weekend and enjoy a special treat on us — show this message at the counter.",
+                    "We've got something for you. Drop in any day this week and mention this offer.",
+                    "A little thank-you from us to you. Visit anytime before the offer ends.",
+                    "Missing your usual? We saved a special deal just for you.",
+                    "It's a good week to treat yourself. Come see what's brewing.",
+                    "Something new is on the menu — come try it with a little extra off.",
+                    "A warm cup is waiting. Drop by and let us know you got this message.",
+                    "Thanks for being part of Morcaffein. Here's a small token of appreciation.",
+                    "We've been thinking about you. Come in for a surprise deal.",
+                    "Your next visit just got a little sweeter. Mention this offer at the counter."))
                 .RuleFor(c => c.DiscountType, f => f.PickRandom("Percentage", "FixedAmount"))
                 .RuleFor(c => c.DiscountValue, (f, c) =>
                     c.DiscountType == "Percentage" ? f.Random.Number(5, 25) : f.Random.Number(20, 100))
@@ -291,8 +302,17 @@ namespace CRM_Morcaffein.infrastructure.Data
                 }
             }
 
+            // Assign a target branch to each seeded campaign. Roughly 30% become
+            // company-wide (BranchId = null) — redeemable at every branch — so the
+            // demo shows a mix of scoped and global campaigns. The rest are
+            // branch-scoped to a random branch.
             foreach (var c in campaigns)
-                c.BranchId = rnd.ArrayElement(branchIds.ToArray());
+            {
+                var companyWide = rnd.Bool(0.30f);
+                c.BranchId = companyWide
+                    ? null
+                    : rnd.ArrayElement(branchIds.ToArray());
+            }
 
             ctx.Campaigns.AddRange(campaigns);
             await ctx.SaveChangesAsync();

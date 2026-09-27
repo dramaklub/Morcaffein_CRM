@@ -1,14 +1,14 @@
 using System.Windows.Forms.DataVisualization.Charting;
 using CRM_Morcaffein.api.DTOs;
-using CRM_Morcaffein.Controllers;
 using CRM_Morcaffein.Theme;
+using CRM_Morcaffein.winforms.Services;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
     /// <summary>Loyalty Tier Progression — Stacked column chart.</summary>
     public class LoyaltyTierProgressionControl : UserControl
     {
-        private readonly DashboardController _controller;
+        private readonly DashboardService _controller;
         private Chart _chart = null!;
         private Label _titleLabel = null!;
         private Label _subtitleLabel = null!;
@@ -21,7 +21,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         public LoyaltyTierProgressionControl()
         {
-            _controller = new DashboardController();
+            _controller = new DashboardService();
             BuildLayout();
         }
 

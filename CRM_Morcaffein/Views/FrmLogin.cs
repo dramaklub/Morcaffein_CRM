@@ -234,6 +234,11 @@ namespace CRM_Morcaffein.winforms.Views
                     ApiConfig.AuthToken = response.Token;
                     ApiConfig.IsSuperAdminSession = false;
 
+                    // Set the tenant context BEFORE anything else touches the API.
+                    // The entitlements fetch below, and every subsequent call this
+                    // session makes, uses ApiConfig.CompanyId.
+                    ApiConfig.CompanyId = response.CompanyId;
+
                     var employee = new Employee
                     {
                         EmployeeId = response.EmployeeId,
