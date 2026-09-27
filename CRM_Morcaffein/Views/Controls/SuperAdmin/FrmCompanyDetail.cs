@@ -26,6 +26,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         // ---- View mode widgets ----
         private Panel _viewPanel = null!;
+        private Panel _viewScrollHost = null!;
         private Label _companyNameLabel = null!;
         private Label _companyCodeLabel = null!;
         private Label _companyStatusLabel = null!;
@@ -38,6 +39,16 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private Button _changePlanBtn = null!;
         private DataGridView _historyGrid = null!;
         private Label _historyEmptyLabel = null!;
+
+        // Admin account section (added between the subscription card and the
+        // history grid). Populated from GET /companies/{id}/admin.
+        private Panel _adminCard = null!;
+        private Label _adminNameLabel = null!;
+        private Label _adminUsernameLabel = null!;
+        private Label _adminContactLabel = null!;
+        private Label _adminStatusLabel = null!;
+        private Button _adminActionBtn = null!;
+        private SuperAdminAdminAccountDto? _adminAccount;
 
         // ---- Assign mode widgets ----
         private Panel _assignPanel = null!;
@@ -71,7 +82,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
-            ClientSize = new Size(640, 620);
+            ClientSize = new Size(680, 720);
             BackColor = BrandPalette.SurfaceCard;
             Font = BrandPalette.BrandFontRegular(9.5f);
 
@@ -141,11 +152,28 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         private void BuildViewPanel()
         {
+            // The view panel itself is tall — company header, subscription card,
+            // admin account card, subscription history grid. On small windows it
+            // overflows. Put it inside an AutoScroll host so the user can reach
+            // the bottom. _viewPanel is NOT docked Fill inside the host — it uses
+            // Dock = Top with explicit height so the host's scrollbar appears
+            // when the content is taller than the visible area.
             _viewPanel = new Panel
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Top,
+                Height = 900,   // generous; will be shorter than the host on most windows
                 BackColor = BrandPalette.SurfaceCard,
             };
+
+            // Wrap it in a scrollable host.
+            var viewScrollHost = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BackColor = BrandPalette.SurfaceCard,
+            };
+            viewScrollHost.Controls.Add(_viewPanel);
+            _viewScrollHost = viewScrollHost;
 
             // Layout strategy: a fixed header strip at the top, a fixed "current
             // subscription" block below it, then a history grid that fills the
@@ -293,10 +321,108 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             currentSection.Controls.Add(_currentCard);
 
+            // ---- Admin Account section (fixed height, docked Top) ----
+            var adminSection = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 200,
+                BackColor = Color.Transparent,
+            };
+
+            var adminHeader = new Label
+            {
+                Text = "Admin Account",
+                Location = new Point(0, 0),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontBold(11f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+            };
+            adminSection.Controls.Add(adminHeader);
+
+            _adminCard = new Panel
+            {
+                Location = new Point(0, 26),
+                Size = new Size(100, 160),   // width set on SizeChanged
+                BackColor = BrandPalette.SurfacePrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            };
+            adminSection.Controls.Add(_adminCard);
+
+            const int admPad = 16;
+
+            _adminNameLabel = new Label
+            {
+                Location = new Point(admPad, admPad),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontBold(12f),
+                ForeColor = BrandPalette.NeutralText,
+                BackColor = Color.Transparent,
+                Text = "—",
+            };
+
+            _adminUsernameLabel = new Label
+            {
+                Location = new Point(admPad, admPad + 26),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                ForeColor = BrandPalette.Brand,
+                BackColor = Color.Transparent,
+                Text = "—",
+            };
+
+            _adminContactLabel = new Label
+            {
+                Location = new Point(admPad, admPad + 48),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = Color.Transparent,
+                Text = "—",
+            };
+
+            _adminStatusLabel = new Label
+            {
+                Location = new Point(admPad, admPad + 70),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = Color.Transparent,
+                Text = "—",
+            };
+
+            _adminActionBtn = new Button
+            {
+                Location = new Point(admPad, admPad + 104),
+                Size = new Size(180, 32),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonSecondaryFill,
+                ForeColor = BrandPalette.ButtonSecondaryText,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                Cursor = Cursors.Hand,
+                Text = "Edit Credentials",
+            };
+            _adminActionBtn.FlatAppearance.BorderSize = 0;
+            _adminActionBtn.Click += AdminActionBtn_Click;
+
+            _adminCard.Controls.Add(_adminActionBtn);
+            _adminCard.Controls.Add(_adminStatusLabel);
+            _adminCard.Controls.Add(_adminContactLabel);
+            _adminCard.Controls.Add(_adminUsernameLabel);
+            _adminCard.Controls.Add(_adminNameLabel);
+
+            // Keep the card stretched to the section's width.
+            adminSection.SizeChanged += (s, e) =>
+            {
+                _adminCard.Width = adminSection.Width;
+            };
+
             // ---- History section (fills remaining space) ----
             var historySection = new Panel
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Top,
+                Height = 320,   // fits ~8 rows at 32px + header; scrollbar appears inside the grid if needed
                 BackColor = Color.Transparent,
             };
 
@@ -406,10 +532,22 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             historySection.Controls.Add(_historyEmptyLabel);
             historySection.Controls.Add(historyHeader);
 
-            // ---- Compose: Fill first (lowest z-order), then docked Top strips ----
+            // WinForms docks Top sections in reverse order of Add — so add
+            // bottom-most first, topmost last. This produces: topStrip at the
+            // very top, then currentSection, then adminSection, then
+            // historySection at the bottom. Sum their heights + a small tail
+            // padding to set _viewPanel.Height explicitly (AutoSize = false
+            // inside the scroll host works more reliably with a fixed height).
             _viewPanel.Controls.Add(historySection);
+            _viewPanel.Controls.Add(adminSection);
             _viewPanel.Controls.Add(currentSection);
             _viewPanel.Controls.Add(topStrip);
+
+            _viewPanel.Height = topStrip.Height
+                              + currentSection.Height
+                              + adminSection.Height
+                              + historySection.Height
+                              + 16;   // tail padding
 
             // Fix the widths of the two controls that need to track the card's
             // width (Label sizes are anchored instead of Absolute; but the card
@@ -427,7 +565,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _currentModulesLabel.Width = _currentCard.Width - cardPad * 2;
             };
 
-            _contentHost.Controls.Add(_viewPanel);
+            _contentHost.Controls.Add(_viewScrollHost);
         }
 
         // =====================================================================
@@ -592,18 +730,21 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _contentHost.SuspendLayout();
             try
             {
-                _contentHost.Controls.Clear();
-
+                // No Clear here — both panels are permanent children of
+                // _contentHost (added in BuildViewPanel and BuildAssignPanel).
+                // Clearing removed them from the tree and the visibility
+                // toggle below couldn't bring them back, which is why the
+                // modal appeared empty.
                 if (_mode == Mode.View)
                 {
-                    _contentHost.Controls.Add(_viewPanel);
-                    _closeBtn.Visible = true;
+                    _viewScrollHost.Visible = true;
+                    _assignPanel.Visible = false;
                     Text = $"Company — {_company.CompanyName}";
                 }
                 else
                 {
-                    _contentHost.Controls.Add(_assignPanel);
-                    _closeBtn.Visible = false;
+                    _viewScrollHost.Visible = false;
+                    _assignPanel.Visible = true;
                     Text = $"Change Plan — {_company.CompanyName}";
                 }
             }
@@ -772,13 +913,16 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             {
                 var subsTask = _api.GetSubscriptionsAsync(_company.CompanyId);
                 var plansTask = _api.GetPlansAsync();
+                var adminTask = _api.GetAdminAsync(_company.CompanyId);
 
-                await Task.WhenAll(subsTask, plansTask);
+                await Task.WhenAll(subsTask, plansTask, adminTask);
 
                 _subscriptions = await subsTask;
                 _plans = await plansTask;
+                _adminAccount = await adminTask;
 
                 RefreshCurrentBlock();
+                RefreshAdminSection();
                 RefreshHistory();
             }
             catch (Exception ex)
@@ -842,6 +986,64 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             }
 
             _historyGrid.ClearSelection();
+        }
+
+        private void RefreshAdminSection()
+        {
+            if (_adminAccount is null || !_adminAccount.HasAdmin)
+            {
+                _adminNameLabel.Text = "No Admin assigned";
+                _adminNameLabel.ForeColor = BrandPalette.NeutralTextMuted;
+                _adminUsernameLabel.Text = "—";
+                _adminContactLabel.Text = "This company has no login credentials yet.";
+                _adminStatusLabel.Text = "";
+                _adminActionBtn.Text = "Create Admin Account";
+                _adminActionBtn.BackColor = BrandPalette.ButtonPrimaryFill;
+                _adminActionBtn.ForeColor = BrandPalette.ButtonPrimaryText;
+                return;
+            }
+
+            _adminNameLabel.Text = _adminAccount.FullName ?? "—";
+            _adminNameLabel.ForeColor = BrandPalette.NeutralText;
+            _adminUsernameLabel.Text = $"Username: {_adminAccount.Username ?? "—"}";
+
+            var contact = _adminAccount.ContactNumber ?? "—";
+            var email = string.IsNullOrWhiteSpace(_adminAccount.Email) ? "" : $"   ·   {_adminAccount.Email}";
+            _adminContactLabel.Text = contact + email;
+
+            var lockNote = _adminAccount.IsLocked == true
+                ? " · LOCKED"
+                : "";
+            _adminStatusLabel.Text =
+                (_adminAccount.IsActive == true ? "Active" : "Inactive") + lockNote +
+                (_adminAccount.LastLoginDate.HasValue
+                    ? $"   ·   Last login: {_adminAccount.LastLoginDate.Value:yyyy-MM-dd HH:mm}"
+                    : "   ·   Never logged in");
+            _adminStatusLabel.ForeColor = _adminAccount.IsActive == true
+                ? BrandPalette.StatusPositiveText
+                : BrandPalette.StatusNegativeFill;
+
+            _adminActionBtn.Text = "Edit Credentials";
+            _adminActionBtn.BackColor = BrandPalette.ButtonSecondaryFill;
+            _adminActionBtn.ForeColor = BrandPalette.ButtonSecondaryText;
+        }
+
+        private async void AdminActionBtn_Click(object? sender, EventArgs e)
+        {
+            using var modal = _adminAccount?.HasAdmin == true
+                ? FrmAdminAccountEdit.ForEdit(_api, _company.CompanyId, _company.CompanyName, _adminAccount)
+                : FrmAdminAccountEdit.ForCreate(_api, _company.CompanyId, _company.CompanyName);
+
+            if (modal.ShowDialog(FindForm()) == DialogResult.OK && modal.Result is not null)
+            {
+                _adminAccount = modal.Result;
+                RefreshAdminSection();
+                Toast.Show(this,
+                    _adminAccount.HasAdmin
+                        ? "Admin account saved."
+                        : "Admin account created.",
+                    ToastKind.Success);
+            }
         }
 
         // =====================================================================

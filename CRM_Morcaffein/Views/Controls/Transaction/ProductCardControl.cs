@@ -12,7 +12,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         private const int SizeRowHeight = 28;
         private const int CardPadding = 8;
-        private const int NameAreaHeight = 26;
+        private const int NameAreaHeight = 62;
         private const int PriceAreaHeight = 18;
 
         private static readonly string[] SizeLabels = { "S", "M", "L", "XL" };
@@ -23,21 +23,12 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private static readonly Font SizeButtonFont = BrandPalette.BrandFontBold(8.5f);
         private static readonly Font IconFont = BrandPalette.BrandFontBold(28f);
 
-        private static readonly SolidBrush NameBrush = new(BrandPalette.NeutralText);
-        private static readonly SolidBrush PriceBrush = new(BrandPalette.NeutralTextMuted);
-        private static readonly SolidBrush IconBrush = new(BrandPalette.Tint25);
         private static readonly SolidBrush BrandBrush = new(BrandPalette.Brand);
         private static readonly SolidBrush HoverBrush = new(BrandPalette.Shade10);
         private static readonly SolidBrush PlaceholderBrush = new(BrandPalette.Tint75);
 
         private static readonly Pen BorderPen = new(BrandPalette.Border);
         private static readonly Pen SeparatorPen = new(BrandPalette.Tint25);
-
-        private static readonly StringFormat EllipsisFormat = new()
-        {
-            Trimming = StringTrimming.EllipsisCharacter,
-            FormatFlags = StringFormatFlags.NoWrap,
-        };
 
         // =====================================================================
 
@@ -132,13 +123,29 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             var imageRect = new Rectangle(CardPadding, CardPadding, Width - CardPadding * 2, imageHeight);
             DrawProductImage(g, imageRect);
 
-            // Product name
-            var nameRect = new RectangleF(CardPadding, nameTop, Width - CardPadding * 2, NameAreaHeight);
-            g.DrawString(Product.ProductName, NameFont, NameBrush, nameRect, EllipsisFormat);
+            // Product name — TextRenderer with WordBreak only. Adding
+            // EndEllipsis was forcing single-line truncation before the wrap
+            // could happen ("Pure Matcha (Hot)" rendered as "Pure Matcha ...").
+            // Without it, the text wraps naturally and the rectangle clips at
+            // the boundary if there's overflow.
+            var nameRect = new Rectangle(CardPadding, nameTop, Width - CardPadding * 2, NameAreaHeight);
+            TextRenderer.DrawText(
+                g,
+                Product.ProductName,
+                NameFont,
+                nameRect,
+                BrandPalette.NeutralText,
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
 
             // Price
-            var priceRect = new RectangleF(CardPadding, nameTop + NameAreaHeight, Width - CardPadding * 2, PriceAreaHeight);
-            g.DrawString($"from ₱{Product.BasePrice:0}", PriceFont, PriceBrush, priceRect, EllipsisFormat);
+            var priceRect = new Rectangle(CardPadding, nameTop + NameAreaHeight, Width - CardPadding * 2, PriceAreaHeight);
+            TextRenderer.DrawText(
+                g,
+                $"from ₱{Product.BasePrice:0}",
+                PriceFont,
+                priceRect,
+                BrandPalette.NeutralTextMuted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
             // Size buttons
             DrawSizeRow(g);

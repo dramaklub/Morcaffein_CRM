@@ -1,169 +1,46 @@
-@CRM_Morcaffein.api_HostAddress = http://localhost:5035
-
-GET {{CRM_Morcaffein.api_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
-
-### Reach master -> resolve tenant A -> hit Tenant A's DB
-GET http://localhost:5035/test-tenant/3
-Accept: application/json
-###
-
-### SuperAdmin login
-# @name saLogin
-POST http://localhost:5035/api/superadmin/auth/login
-Content-Type: application/json
-
-{
-  "username": "superadmin",
-  "password": "password123"
-}
-
-### List companies
-GET http://localhost:5035/api/superadmin/companies
-Authorization: Bearer {{saLogin.response.body.$.token}}
-
-### List plans
-GET http://localhost:5035/api/superadmin/plans
-Authorization: Bearer {{saLogin.response.body.$.token}}
-
-### Tenant A — full seed
-POST http://localhost:5035/api/tenant/1/dev/seed
-
-### Tenant B — minimal seed
-POST http://localhost:5035/api/tenant/2/dev/seed?customers=10&orders=30
-
-### Tenant C — minimal seed
-POST http://localhost:5035/api/tenant/3/dev/seed?customers=10&orders=30
-
-### List employees
-GET http://localhost:5035/api/tenant/1/employees?page=1&pageSize=20
-Authorization: Bearer {{login.response.body.$.token}}
-
-### List employees in Tenant A
-GET http://localhost:5035/api/tenant/1/employees?page=1&pageSize=20
-Authorization: Bearer {{login.response.body.$.token}}
-
-###
-
-POST http://localhost:5035/api/superadmin/companies/1/assign-plan
-Authorization: Bearer {{saLogin.response.body.$.token}}
-Content-Type: application/json
-
-{
-  "planId": 3,
-  "termsAcceptedBy": "Platform Operator"
-}
-
-###
-
-### List subscriptions for Company 1
-GET http://localhost:5035/api/superadmin/companies/1/subscriptions
-Authorization: Bearer {{saLogin.response.body.$.token}}
-
-### Upgrade to Full (assign Basic first, then Full, to see the history)
-POST http://localhost:5035/api/superadmin/companies/1/assign-plan
-Authorization: Bearer {{saLogin.response.body.$.token}}
-Content-Type: application/json
-
-{
-  "planId": 1,
-  "termsAcceptedBy": "Platform Operator"
-}
-
-###
-
-POST http://localhost:5035/api/superadmin/companies/1/assign-plan
-Authorization: Bearer {{saLogin.response.body.$.token}}
-Content-Type: application/json
-
-{
-  "planId": 3,
-  "termsAcceptedBy": "Platform Operator"
-}
-
-###
-
-### Now subscriptions should show 3 rows: Full (initial), Basic (superseded), Full (current)
-GET http://localhost:5035/api/superadmin/companies/1/subscriptions
-Authorization: Bearer {{saLogin.response.body.$.token}}
-
-
-### Tenant-agnostic login
-# @name basicLogin
-POST http://localhost:5035/api/auth/login
-Content-Type: application/json
-
-{
-  "username": "trent.windler",
-  "password": "password123"
-}
-
-###
-POST http://localhost:5035/api/tenant/3/feedback/90/resolve
-Authorization: Bearer {{basicLogin.response.body.$.token}}
-Content-Type: application/json
-
-{
-  "decidedBy": 12,
-  "bonusPoints": 10,
-  "notes": "test"
-}
-
-###
-#@name adminLogin
+### Admin login
+# @name adminLogin
 POST http://localhost:5035/api/auth/login
 Content-Type: application/json
 
 {
   "username": "jason.kub",
-  "password": "password123"
+  "password": "pass"
 }
-###
 
-POST http://localhost:5035/api/tenant/1/dev/test-email
+### Exact ID match (should return 1 customer)
+GET http://localhost:5035/api/tenant/1/customers/find?query=1
+Authorization: Bearer {{adminLogin.response.body.$.token}}
+
+### Partial-digit phone (should 404 now, not match everyone)
+GET http://localhost:5035/api/tenant/1/customers/find?query=1
+Authorization: Bearer {{adminLogin.response.body.$.token}}
+
+### Exact phone (should match the customer with that number)
+GET http://localhost:5035/api/tenant/1/customers/find?query=09790849413
+Authorization: Bearer {{adminLogin.response.body.$.token}}
+
+### Exact ID that doesn't exist but the number parses (should fall through to phone, likely 404)
+GET http://localhost:5035/api/tenant/1/customers/find?query=999
 Authorization: Bearer {{adminLogin.response.body.$.token}}
 
 ###
-#Log in as a Tenant C Admin
-#@name basicAdminLogin
-POST http://localhost:5035/api/auth/login
-Content-Type: application/json
-
-{
-  "username": "briana.watsica",
-  "password": "password123"
-}
-
-### Basic tenant tries to create — should be 400 with the plan message
-POST http://localhost:5035/api/tenant/3/branches
-Authorization: Bearer {{basicAdminLogin.response.body.$.token}}
-Content-Type: application/json
-
-{
-  "branchName": "Rogue Branch",
-  "address": ""
-}
-
-### Get all campaigns for Tenant A — new rows should have branchId/branchName
-GET http://localhost:5035/api/tenant/1/campaigns/manage
+POST http://localhost:5035/api/tenant/1/orders
 Authorization: Bearer {{adminLogin.response.body.$.token}}
-
-### Superadmin login
-# @name saLogin
-POST http://localhost:5035/api/superadmin/auth/login
 Content-Type: application/json
 
 {
-  "username": "superadmin",
-  "password": "password123"
+  "customerId": 151,
+  "createdBy": 20,
+  "branchId": 1,
+  "hasPwdSeniorDiscount": false,
+  "campaignId": null,
+  "lines": [
+    {
+      "productId": 1,
+      "productSizeId": 1,
+      "quantity": 1,
+      "modifierIds": []
+    }
+  ]
 }
-
-### Terms list — should return 3 rows
-GET http://localhost:5035/api/superadmin/terms
-Authorization: Bearer {{saLogin.response.body.$.token}}
-
-### Terms detail for id=1
-GET http://localhost:5035/api/superadmin/terms/1
-Authorization: Bearer {{saLogin.response.body.$.token}}

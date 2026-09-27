@@ -128,7 +128,18 @@ namespace CRM_Morcaffein.api.Controllers
         }
 
         // GET api/tenant/{companyId}/customers/find?query=...
-        // Used by the POS customer search (ID or phone). Returns a single match or 404.
+        // Used by the POS customer search (exact customer ID or exact phone number).
+        // Returns a single match or 404.
+        //
+        // Matching rules (EXACT ONLY — no substring, no name match):
+        //   1. If the query parses as an int, look for a customer whose
+        //      CustomerId equals that int exactly.
+        //   2. Otherwise, treat the query as a phone number and look for a
+        //      customer whose ContactNumber equals the digits exactly.
+        //
+        // The previous implementation used .Contains on the phone, which
+        // meant typing "1" matched every customer whose number contained a
+        // "1". That's the bug this fixes.
         [HttpGet("find")]
         public async Task<ActionResult<CustomerResponseDto>> FindCustomer(
             int companyId,
@@ -143,15 +154,19 @@ namespace CRM_Morcaffein.api.Controllers
 
             Customer? match = null;
 
-            // Try ID first
+            // ---- Try exact CustomerId first ----
             if (int.TryParse(term, out var id))
             {
                 match = await tenant.Customers
                     .AsNoTracking()
                     .FirstOrDefaultAsync(c => c.CustomerId == id && c.IsActive);
+
+                // If a customer with that exact ID exists, return it. If not,
+                // fall through to phone lookup in case the query was a
+                // numeric phone fragment.
             }
 
-            // Then phone (digits only)
+            // ---- Try exact phone number ----
             if (match is null)
             {
                 var digits = new string(term.Where(char.IsDigit).ToArray());
@@ -159,7 +174,7 @@ namespace CRM_Morcaffein.api.Controllers
                 {
                     match = await tenant.Customers
                         .AsNoTracking()
-                        .FirstOrDefaultAsync(c => c.ContactNumber.Contains(digits) && c.IsActive);
+                        .FirstOrDefaultAsync(c => c.ContactNumber == digits && c.IsActive);
                 }
             }
 

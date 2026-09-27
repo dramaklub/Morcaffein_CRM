@@ -4,6 +4,7 @@ using CRM_Morcaffein.Session;
 using CRM_Morcaffein.Theme;
 using CRM_Morcaffein.winforms.Services;
 using CRM_Morcaffein.winforms.Services.Api;
+using CRM_Morcaffein.winforms.Views;
 
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
@@ -28,7 +29,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         // Layout constants
         // ---------------------------------------------------------------------
         private const int DrinksColumnCount = 5;
-        private const int DrinksRowHeight = 216;
+        private const int DrinksRowHeight = 234;
         private const int CustomerAreaHeight = 96;
         private const int RightColumnWidth = 380;
         private const string AllCategoriesOption = "All Categories";
@@ -77,6 +78,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private Label _totalValueLabel = null!;
         private Label _cartStatusLabel = null!;
         private Button _promoMenuBtn = null!;
+        private NumericUpDown _cashReceivedNud = null!;
+        private Label _changeValueLabel = null!;
         private Button _logSaleBtn = null!;
 
         // ---------------------------------------------------------------------
@@ -735,13 +738,59 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             var box = new Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = 56,
+                Height = 128,
                 Margin = new Padding(10, 0, 10, 10),
                 Padding = new Padding(10),
                 BorderStyle = BorderStyle.FixedSingle,
                 BackColor = BrandPalette.SurfacePrimary,
             };
 
+            // ---- Cash received row (2-up: input on left, change on right) ----
+            var cashRow = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 52,
+                BackColor = Color.Transparent,
+            };
+
+            var cashLabel = new Label
+            {
+                Text = "Cash received",
+                Location = new Point(0, 0),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontRegular(9f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = Color.Transparent,
+            };
+
+            _cashReceivedNud = new NumericUpDown
+            {
+                Location = new Point(0, 20),
+                Size = new Size(140, 28),
+                DecimalPlaces = 2,
+                Minimum = 0m,
+                Maximum = 100000m,
+                Value = 0m,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                TextAlign = HorizontalAlignment.Right,
+            };
+            _cashReceivedNud.ValueChanged += (s, e) => RefreshCashAndLogSaleState();
+
+            _changeValueLabel = new Label
+            {
+                Location = new Point(150, 22),
+                AutoSize = true,
+                Font = BrandPalette.BrandFontBold(10.5f),
+                ForeColor = BrandPalette.NeutralTextMuted,
+                BackColor = Color.Transparent,
+                Text = "Change: ₱0.00",
+            };
+
+            cashRow.Controls.Add(_changeValueLabel);
+            cashRow.Controls.Add(_cashReceivedNud);
+            cashRow.Controls.Add(cashLabel);
+
+            // ---- Log Sale button (docks Fill of the remaining space) ----
             _logSaleBtn = new Button
             {
                 Text = "Log Sale",
@@ -756,7 +805,17 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _logSaleBtn.Click += (s, e) => CompleteSale();
             ButtonStyler.TrackEnabledState(_logSaleBtn);
 
-            box.Controls.Add(_logSaleBtn);
+            var logSaleWrapper = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+                BackColor = Color.Transparent,
+            };
+            logSaleWrapper.Controls.Add(_logSaleBtn);
+
+            box.Controls.Add(logSaleWrapper);
+            box.Controls.Add(cashRow);
+
             return box;
         }
 
@@ -1073,7 +1132,41 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _vatValueLabel.Text = $"₱{vatAmount:0.00}";
             _pwdSeniorValueLabel.Text = $"₱{_controller.PwdSeniorDiscountAmount:0.00}";
             _totalValueLabel.Text = $"₱{_controller.TotalAmount:0.00}";
-            _logSaleBtn.Enabled = _controller.HasItems;
+            RefreshCashAndLogSaleState();
+        }
+
+        /// <summary>
+        /// Updates the Change label and the Log Sale enabled state from the
+        /// current cart total and the cash-received input. Enabled only when
+        /// the cart has items AND cash >= total. Also called on every
+        /// _cashReceivedNud.ValueChanged.
+        /// </summary>
+        private void RefreshCashAndLogSaleState()
+        {
+            if (_controller is null || !_controller.HasItems)
+            {
+                _changeValueLabel.Text = "Change: ₱0.00";
+                _changeValueLabel.ForeColor = BrandPalette.NeutralTextMuted;
+                _logSaleBtn.Enabled = false;
+                return;
+            }
+
+            var total = _controller.TotalAmount;
+            var cash = _cashReceivedNud.Value;
+            var change = cash - total;
+
+            if (change < 0)
+            {
+                _changeValueLabel.Text = $"Short: ₱{Math.Abs(change):0.00}";
+                _changeValueLabel.ForeColor = BrandPalette.StatusNegativeFill;
+                _logSaleBtn.Enabled = false;
+            }
+            else
+            {
+                _changeValueLabel.Text = $"Change: ₱{change:0.00}";
+                _changeValueLabel.ForeColor = BrandPalette.StatusPositiveText;
+                _logSaleBtn.Enabled = true;
+            }
         }
 
         // =====================================================================
@@ -1318,15 +1411,24 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 return;
             }
 
-            MessageBox.Show(FindForm(),
-                $"Sale completed. {_controller.CompletedPointsEarned} points awarded to {_controller.CompletedCustomerName}.",
-                "Sale Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Show the receipt modal using the full OrderResponseDto the API
+            // returned plus the cash the cashier entered. The modal is
+            // read-only; closing it returns the cashier to a cleared cart.
+            var completedOrder = _controller.CompletedOrder;
+            var amountPaid = _cashReceivedNud.Value;
+
+            if (completedOrder is not null)
+            {
+                using var receipt = new FrmReceipt(completedOrder, amountPaid);
+                receipt.ShowDialog(FindForm());
+            }
 
             _controller = null;
             _customerProfilePanel.Visible = false;
             _customerSearchErrorLabel.Text = string.Empty;
             _customerSearchTxtBx.Text = string.Empty;
             _cartStatusLabel.Text = string.Empty;
+            _cashReceivedNud.Value = 0m;
 
             SuspendLayout();
             _blockOverlayPanel.Visible = true;

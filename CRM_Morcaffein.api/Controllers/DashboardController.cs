@@ -127,6 +127,8 @@ namespace CRM_Morcaffein.api.Controllers
             if (days < 1) days = 1;
             if (days > 365) days = 365;
 
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
@@ -222,6 +224,8 @@ namespace CRM_Morcaffein.api.Controllers
             if (days < 1) days = 1;
             if (days > 90) days = 90;
 
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
@@ -274,6 +278,8 @@ namespace CRM_Morcaffein.api.Controllers
         {
             if (days < 1) days = 1;
             if (days > 365) days = 365;
+
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
 
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
@@ -391,6 +397,8 @@ namespace CRM_Morcaffein.api.Controllers
         {
             if (!CallerIsManagerOrAdmin())
                 return StatusCode(403, new { message = "Only managers and admins can view POS diagnostics." });
+
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
 
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -600,6 +608,8 @@ namespace CRM_Morcaffein.api.Controllers
             if (days > 365) days = 365;
             if (limit < 1) limit = 10;
             if (limit > 100) limit = 100;
+
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
 
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
@@ -885,6 +895,8 @@ namespace CRM_Morcaffein.api.Controllers
             if (limit < 1) limit = 1;
             if (limit > 20) limit = 20;
 
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
@@ -1015,6 +1027,8 @@ namespace CRM_Morcaffein.api.Controllers
             if (days < 1) days = 1;
             if (days > 365) days = 365;
 
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
@@ -1118,6 +1132,8 @@ namespace CRM_Morcaffein.api.Controllers
             if (limit < 1) limit = 5;
             if (limit > 20) limit = 20;
 
+            branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
             var feedbacks = await tenant.Feedbacks
@@ -1144,6 +1160,42 @@ namespace CRM_Morcaffein.api.Controllers
         }
 
         // ---- Helpers ----
+
+        /// <summary>
+        /// Resolves the branch a request should actually be scoped to.
+        ///
+        /// Rules:
+        ///   - If the caller is a pinned employee (Employee.BranchId != null),
+        ///     the server forces their own branch. Whatever the client sent
+        ///     in ?branchId= is ignored.
+        ///   - If the caller is all-branch (Admin, or Manager with
+        ///     BranchId == null), the client-supplied value is honored.
+        ///     null = "All Branches".
+        ///
+        /// This is the actual enforcement — the client hiding the selector
+        /// is UX, not a security boundary.
+        /// </summary>
+        private async Task<int?> ResolveEffectiveBranchIdAsync(int companyId, int? requestedBranchId)
+        {
+            var empIdClaim = User.FindFirst("employeeId")?.Value;
+            if (!int.TryParse(empIdClaim, out var employeeId))
+                return requestedBranchId;   // shouldn't happen given [Authorize], but no-op if it does
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var callerBranch = await tenant.Employees
+                .AsNoTracking()
+                .Where(e => e.EmployeeId == employeeId)
+                .Select(e => e.BranchId)
+                .FirstOrDefaultAsync();
+
+            // Pinned caller → force their own branch, ignore the request.
+            if (callerBranch.HasValue)
+                return callerBranch.Value;
+
+            // All-branch caller → honor whatever they sent (which may be null).
+            return requestedBranchId;
+        }
 
         private bool CallerIsManagerOrAdmin() =>
             User.IsInRole("Manager") || User.IsInRole("Admin") || User.IsInRole("SuperAdmin");

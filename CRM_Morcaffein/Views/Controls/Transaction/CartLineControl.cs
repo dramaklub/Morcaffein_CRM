@@ -5,16 +5,16 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 {
     /// <summary>
     /// One row in the Order box: "Drink Name (Size) +Mods … ₱SubTotal [- 2x +] ✕" — a compact
-    /// inline quantity stepper instead of a data-grid row, matching a modern POS's order list
-    /// rather than the boxed-table convention the rest of the app uses.
+    /// inline quantity stepper instead of a data-grid row, matching a modern POS's order list.
+    ///
+    /// The name label wraps to two lines when needed, so "Vanilla Matcha (Cold)" no longer
+    /// clips to "Vanilla Matc…". Row height is 60px (up from 44) to fit the second line.
     ///
     /// Absolute-positioned children recomputed on every OnResize. Deliberately NOT Dock-based
-    /// (a Dock.Fill name label at full row height wraps before AutoEllipsis kicks in) and NOT
-    /// TableLayoutPanel (absolute columns get clipped when the host is narrower than expected).
+    /// and NOT TableLayoutPanel — the same reasoning as the previous version.
     ///
-    /// The ✕ is a Label, not a Button — WinForms FlatStyle buttons enforce a minimum width
-    /// larger than the 28px we want, so a Button ✕ visually overlapped the + stepper button.
-    /// Labels have no such floor.
+    /// The ✕ is a Label, not a Button — FlatStyle buttons enforce a minimum width larger
+    /// than 28px, which would overlap the + stepper.
     /// </summary>
     public class CartLineControl : Panel
     {
@@ -24,8 +24,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         public event EventHandler? QuantityDecreased;
         public event EventHandler? RemoveClicked;
 
-        private const int RowHeight = 44;
-        private const int NameHeight = 22;
+        private const int RowHeight = 60;             // was 44 — taller for two-line names
         private const int StepperButtonSize = 30;
         private const int QtyLabelWidth = 34;
         private const int StepperClusterWidth = StepperButtonSize + QtyLabelWidth + StepperButtonSize; // 94
@@ -50,14 +49,18 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             var modifiersSuffix = item.OrderItemModifiers.Count == 0
                 ? string.Empty
-                : $" +{string.Join(",", item.OrderItemModifiers.Select(m => m.ProductModifierNameSnapshot))}";
+                : $"  +{string.Join(", ", item.OrderItemModifiers.Select(m => m.ProductModifierNameSnapshot))}";
 
             _nameLabel = new Label
             {
                 Text = $"{item.Product?.ProductName ?? "—"} ({item.SizeNameSnapshot}){modifiersSuffix}",
+
+                // Now wraps to two lines. AutoEllipsis is removed — that was the
+                // setting forcing "Vanilla Matc..." on a single line. The row is
+                // 60px tall and the label is vertically centred, so two lines sit
+                // comfortably inside.
                 AutoSize = false,
-                Height = NameHeight,
-                AutoEllipsis = true,
+                Height = RowHeight - 4,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Font = BrandPalette.BrandFontRegular(9.5f),
                 ForeColor = BrandPalette.NeutralText,
@@ -89,7 +92,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 WrapContents = false,
                 Width = StepperClusterWidth,
                 Height = RowHeight,
-                Padding = new Padding(0, 7, 0, 7),
+                Padding = new Padding(0, (RowHeight - StepperButtonSize) / 2, 0, 0),
             };
 
             var minusBtn = MakeStepperButton("-");
@@ -100,7 +103,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Text = $"{item.Quantity}x",
                 Width = QtyLabelWidth,
                 Height = StepperButtonSize,
-                Margin = new Padding(0),            // ← same reason
+                Margin = new Padding(0),
                 TextAlign = ContentAlignment.MiddleCenter,
                 Font = BrandPalette.BrandFontBold(10f),
                 ForeColor = BrandPalette.NeutralText,
@@ -147,9 +150,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         private void LayoutChildren()
         {
-            // OnResize fires from the base Panel constructor (via the Height assignment at the
-            // top of our own constructor) BEFORE the child fields are assigned. Bail until
-            // everything's wired up — real layout runs from OnHandleCreated and every resize.
             if (_nameLabel is null || _priceLabel is null || _rightCluster is null ||
                 _stepper is null || _removeLabel is null)
                 return;
@@ -163,9 +163,13 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _stepper.Location = new Point(0, 0);
             _priceLabel.Location = new Point(_rightCluster.Left - PriceWidth, 0);
 
-            var nameWidth = Math.Max(0, _priceLabel.Left - 4);
-            _nameLabel.Location = new Point(0, (RowHeight - NameHeight) / 2);
+            // Name label stretches from the left edge to just before the price
+            // label, with 4px of clearance. Now that it wraps, the height matches
+            // the row so two lines fit centred.
+            var nameWidth = Math.Max(0, _priceLabel.Left - 6);
+            _nameLabel.Location = new Point(2, 0);
             _nameLabel.Width = nameWidth;
+            _nameLabel.Height = RowHeight;
         }
 
         private static Button MakeStepperButton(string text) => new()
@@ -173,8 +177,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             Text = text,
             Width = StepperButtonSize,
             Height = StepperButtonSize,
-            Margin = new Padding(0),            // ← FlowLayoutPanel default margin (3px each side) was
-                                                // squeezing the trailing + button out of the 94px stepper
+            Margin = new Padding(0),
             FlatStyle = FlatStyle.Flat,
             BackColor = BrandPalette.ButtonSecondaryFill,
             ForeColor = BrandPalette.ButtonSecondaryText,

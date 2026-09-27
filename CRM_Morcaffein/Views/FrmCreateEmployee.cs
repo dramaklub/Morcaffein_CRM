@@ -1,4 +1,5 @@
-﻿using CRM_Morcaffein.Theme;
+﻿using CRM_Morcaffein.Session;
+using CRM_Morcaffein.Theme;
 using CRM_Morcaffein.winforms.Services;
 using CRM_Morcaffein.winforms.Services.Api;
 
@@ -181,7 +182,6 @@ namespace CRM_Morcaffein.winforms.Views
             formHost.Controls.Add(_roleCombo);
             y += rowH;
 
-            // ---- Branch (role-dependent: required for Barista, optional for Manager) ----
             _branchLabel = new Label
             {
                 Text = "Branch *",
@@ -201,6 +201,14 @@ namespace CRM_Morcaffein.winforms.Views
                 Font = BrandPalette.BrandFontRegular(9.5f),
             };
             formHost.Controls.Add(_branchCombo);
+
+            var hasBranching = EmployeeSession.Current?.HasModule("Branching") == true;
+            if (!hasBranching)
+            {
+                _branchLabel.Visible = false;
+                _branchCombo.Visible = false;
+            }
+
             y += rowH;
 
             // ---- Username ----
@@ -420,15 +428,27 @@ namespace CRM_Morcaffein.winforms.Views
                 return;
             }
 
-            // ---- Branch validation ----
+            // ---- Branch resolution ----
             var selectedRole = _roleCombo.SelectedItem as string ?? "Barista";
             var isBarista = selectedRole.Equals("Barista", StringComparison.OrdinalIgnoreCase);
-            int? branchId = (_branchCombo.SelectedItem as BranchItem)?.BranchId;
+            var hasBranching = EmployeeSession.Current?.HasModule("Branching") == true;
 
-            if (isBarista && branchId is null)
+            int? branchId;
+            if (hasBranching)
             {
-                _errorLabel.Text = "Baristas must be assigned to a branch.";
-                return;
+                branchId = (_branchCombo.SelectedItem as BranchItem)?.BranchId;
+
+                if (isBarista && branchId is null)
+                {
+                    _errorLabel.Text = "Baristas must be assigned to a branch.";
+                    return;
+                }
+            }
+            else
+            {
+                // No Branching module: single-branch tenant. Default everyone
+                // to Branch 1 so the FK requirement downstream is met.
+                branchId = 1;
             }
 
             if (_usernameTxtBx.Text.Trim().Length < 3)

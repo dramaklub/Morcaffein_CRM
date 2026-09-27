@@ -42,12 +42,17 @@ namespace CRM_Morcaffein.api.Controllers
             if (customer is null)
                 return BadRequest(new { message = "Customer not found." });
 
-            var employeeExists = await tenant.Employees
-                .AnyAsync(e => e.EmployeeId == request.CreatedBy);
-            if (!employeeExists)
+            var employee = await tenant.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.EmployeeId == request.CreatedBy);
+            if (employee is null)
                 return BadRequest(new { message = "Employee not found." });
 
             // ---- Look up all products / sizes / modifiers referenced ----
+            var branch = await tenant.Branches
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.BranchId == request.BranchId);
+
             var productIds = request.Lines.Select(l => l.ProductId).Distinct().ToList();
             var sizeIds = request.Lines.Select(l => l.ProductSizeId).Distinct().ToList();
             var modifierIds = request.Lines.SelectMany(l => l.ModifierIds).Distinct().ToList();
@@ -259,12 +264,30 @@ namespace CRM_Morcaffein.api.Controllers
                 CustomerId = order.CustomerId,
                 CustomerName = (customer.FirstName + " " + customer.LastName).Trim(),
                 CreatedBy = order.CreatedBy,
+                CreatedByName = (employee.FirstName + " " + employee.LastName).Trim(),
+                BranchName = branch?.BranchName,
                 SubTotal = order.SubTotal,
                 TotalDiscount = order.TotalDiscount,
+                PwdSeniorDiscountAmount = order.PwdSeniorDiscountAmount,
                 TotalAmount = order.TotalAmount,
                 PointsEarned = order.PointsEarned,
+                NewPointsBalance = customer.PointsBalance,
                 OrderDate = order.OrderDate,
                 Status = order.Status,
+                Lines = order.OrderItems.Select(oi => new OrderReceiptLineDto
+                {
+                    ProductName = products.FirstOrDefault(p => p.ProductId == oi.ProductId)?.ProductName
+                                  ?? $"Product #{oi.ProductId}",
+                    SizeName = oi.SizeNameSnapshot,
+                    Quantity = oi.Quantity,
+                    UnitPrice = oi.UnitPrice,
+                    SubTotal = oi.SubTotal,
+                    Modifiers = oi.OrderItemModifiers.Select(m => new OrderReceiptModifierDto
+                    {
+                        Name = m.ProductModifierNameSnapshot,
+                        UnitPrice = m.UnitPrice,
+                    }).ToList(),
+                }).ToList(),
             });
         }
 

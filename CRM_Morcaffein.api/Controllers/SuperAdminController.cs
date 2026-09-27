@@ -1,9 +1,10 @@
 ﻿using CRM_Morcaffein.api.DTOs;
+using CRM_Morcaffein.domain.entities;
 using CRM_Morcaffein.infrastructure.data;
+using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using CRM_Morcaffein.domain.entities;
 
 namespace CRM_Morcaffein.api.Controllers
 {
@@ -21,10 +22,14 @@ namespace CRM_Morcaffein.api.Controllers
     public class SuperAdminController : ControllerBase
     {
         private readonly MasterCrmDbContext _master;
+        private readonly ITenantDbContextFactory _tenantFactory;
 
-        public SuperAdminController(MasterCrmDbContext master)
+        public SuperAdminController(
+            MasterCrmDbContext master,
+            ITenantDbContextFactory tenantFactory)
         {
             _master = master;
+            _tenantFactory = tenantFactory;
         }
 
         // GET api/superadmin/companies
@@ -318,6 +323,355 @@ namespace CRM_Morcaffein.api.Controllers
                 return NotFound(new { message = $"Terms document {id} not found." });
 
             return Ok(terms);
+        }
+
+        // =====================================================================
+        // COMPANY ADMIN ACCOUNT — the primary login the SuperAdmin provisions.
+        // One Admin per company. All three endpoints work cross-DB: they touch
+        // the master (CompanyUsers routing row) AND the tenant (Credentials +
+        // Employees). The master write is always first, tenant second, with
+        // rollback on tenant failure — same pattern as EmployeesController.
+        // =====================================================================
+
+        // GET api/superadmin/companies/{id}/admin
+        //
+        // Returns the company's Admin account. If none exists,
+        // { HasAdmin: false } is returned and the client shows a "Create"
+        // button instead of an edit form.
+        [HttpGet("companies/{id:int}/admin")]
+        public async Task<ActionResult<SuperAdminAdminAccountDto>> GetCompanyAdmin(int id)
+        {
+            var companyExists = await _master.Companies
+                .AnyAsync(c => c.CompanyId == id);
+            if (!companyExists)
+                return NotFound(new { message = $"Company {id} not found." });
+
+            await using var tenant = await _tenantFactory.CreateAsync(id);
+
+            var admin = await tenant.Employees
+                .AsNoTracking()
+                .Include(e => e.Credential)
+                .Where(e => e.Role == "Admin")
+                .Select(e => new
+                {
+                    e.EmployeeId,
+                    e.FirstName,
+                    e.LastName,
+                    e.Email,
+                    e.ContactNumber,
+                    e.IsActive,
+                    Username = e.Credential != null ? e.Credential.Username : null,
+                    IsLocked = e.Credential != null ? (bool?)e.Credential.IsLocked : null,
+                    LastLoginDate = e.Credential != null ? e.Credential.LastLoginDate : null,
+                })
+                .FirstOrDefaultAsync();
+
+            if (admin is null)
+                return Ok(new SuperAdminAdminAccountDto { HasAdmin = false });
+
+            return Ok(new SuperAdminAdminAccountDto
+            {
+                HasAdmin = true,
+                EmployeeId = admin.EmployeeId,
+                Username = admin.Username,
+                FirstName = admin.FirstName,
+                LastName = admin.LastName,
+                FullName = (admin.FirstName + " " + admin.LastName).Trim(),
+                Email = string.IsNullOrWhiteSpace(admin.Email) ? null : admin.Email,
+                ContactNumber = admin.ContactNumber,
+                IsActive = admin.IsActive,
+                IsLocked = admin.IsLocked,
+                LastLoginDate = admin.LastLoginDate,
+            });
+        }
+
+        // POST api/superadmin/companies/{id}/admin
+        //
+        // Creates the company's first Admin account. Blocked if an Admin
+        // already exists — use PUT to edit instead.
+        //
+        // Cross-DB write order:
+        //   1. Insert CompanyUser (master) — reserves the username globally.
+        //   2. Insert Employee + Credential (tenant).
+        //   3. Roll back step 1 if step 2 fails.
+        [HttpPost("companies/{id:int}/admin")]
+        public async Task<ActionResult<SuperAdminAdminAccountDto>> CreateCompanyAdmin(
+            int id,
+            CreateCompanyAdminRequest request)
+        {
+            // ---- Validation ----
+            if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Trim().Length < 3)
+                return BadRequest(new { message = "Username must be at least 3 characters." });
+
+            if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 4)
+                return BadRequest(new { message = "Password must be at least 4 characters." });
+
+            if (string.IsNullOrWhiteSpace(request.FirstName))
+                return BadRequest(new { message = "First name is required." });
+
+            if (string.IsNullOrWhiteSpace(request.LastName))
+                return BadRequest(new { message = "Last name is required." });
+
+            var cleanedPhone = new string((request.ContactNumber ?? "").Where(char.IsDigit).ToArray());
+            if (cleanedPhone.Length < 10 || cleanedPhone.Length > 11)
+                return BadRequest(new { message = "Contact number must be 10-11 digits." });
+
+            var cleanedEmail = string.Empty;
+            if (!string.IsNullOrWhiteSpace(request.Email))
+            {
+                if (!request.Email.Contains('@') || !request.Email.Contains('.'))
+                    return BadRequest(new { message = "Invalid email format." });
+                cleanedEmail = request.Email.Trim().ToLower();
+            }
+
+            var trimmedUsername = request.Username.Trim();
+
+            var company = await _master.Companies
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.CompanyId == id);
+            if (company is null)
+                return NotFound(new { message = $"Company {id} not found." });
+
+            // ---- Uniqueness: master routing table ----
+            var takenInMaster = await _master.CompanyUsers
+                .AnyAsync(cu => cu.Username == trimmedUsername);
+            if (takenInMaster)
+                return Conflict(new { message = "That username is already taken (by another tenant)." });
+
+            await using var tenant = await _tenantFactory.CreateAsync(id);
+
+            // ---- Enforce: one Admin per company ----
+            var existingAdmin = await tenant.Employees
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Role == "Admin");
+            if (existingAdmin is not null)
+                return Conflict(new { message = "This company already has an Admin account. Use edit instead." });
+
+            // ---- Uniqueness: tenant credentials ----
+            var takenInTenant = await tenant.Credentials
+                .AsNoTracking()
+                .AnyAsync(c => c.Username == trimmedUsername);
+            if (takenInTenant)
+                return Conflict(new { message = "That username is already taken." });
+
+            // ---- Step 1: master routing row ----
+            var routingRow = new CompanyUser
+            {
+                CompanyId = id,
+                Username = trimmedUsername,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _master.CompanyUsers.Add(routingRow);
+
+            try
+            {
+                await _master.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+
+            // ---- Step 2: tenant employee + credential ----
+            var employee = new Employee
+            {
+                FirstName = request.FirstName.Trim(),
+                LastName = request.LastName.Trim(),
+                ContactNumber = cleanedPhone,
+                Email = cleanedEmail,
+                Role = "Admin",
+                BranchId = null,   // Admins are all-branch by convention
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+
+            var credential = new Credential
+            {
+                Username = trimmedUsername,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+                Employee = employee,
+                FailedLoginAttempts = 0,
+                IsLocked = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+
+            tenant.Employees.Add(employee);
+            tenant.Credentials.Add(credential);
+
+            try
+            {
+                await tenant.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                // Roll back the routing row so the username is free again.
+                try
+                {
+                    _master.CompanyUsers.Remove(routingRow);
+                    await _master.SaveChangesAsync();
+                }
+                catch { /* best-effort; sync-company-users can clean up stragglers */ }
+
+                return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+
+            return Ok(new SuperAdminAdminAccountDto
+            {
+                HasAdmin = true,
+                EmployeeId = employee.EmployeeId,
+                Username = credential.Username,
+                FirstName = employee.FirstName,
+                LastName = employee.LastName,
+                FullName = (employee.FirstName + " " + employee.LastName).Trim(),
+                Email = string.IsNullOrWhiteSpace(employee.Email) ? null : employee.Email,
+                ContactNumber = employee.ContactNumber,
+                IsActive = employee.IsActive,
+                IsLocked = false,
+                LastLoginDate = null,
+            });
+        }
+
+        // PUT api/superadmin/companies/{id}/admin
+        //
+        // Updates the Admin's username and/or password. Both fields are
+        // optional; blank/null means "leave unchanged."
+        //
+        // Cross-DB write order (username change):
+        //   1. Update CompanyUser.Username (master).
+        //   2. Update Credential.Username (tenant).
+        //   3. Roll back step 1 if step 2 fails.
+        //
+        // Password change touches only the tenant Credential row — no
+        // master-side change.
+        [HttpPut("companies/{id:int}/admin")]
+        public async Task<ActionResult<SuperAdminAdminAccountDto>> UpdateCompanyAdmin(
+            int id,
+            UpdateCompanyAdminRequest request)
+        {
+            var companyExists = await _master.Companies
+                .AnyAsync(c => c.CompanyId == id);
+            if (!companyExists)
+                return NotFound(new { message = $"Company {id} not found." });
+
+            await using var tenant = await _tenantFactory.CreateAsync(id);
+
+            var admin = await tenant.Employees
+                .Include(e => e.Credential)
+                .FirstOrDefaultAsync(e => e.Role == "Admin");
+
+            if (admin is null)
+                return NotFound(new { message = "This company has no Admin account." });
+
+            if (admin.Credential is null)
+                return Conflict(new { message = "This Admin has no login credentials." });
+
+            var requestedUsername = (request.Username ?? "").Trim();
+            var requestedPassword = request.NewPassword ?? "";
+
+            var usernameChanging = false;
+            string? oldUsername = null;
+            CompanyUser? routingRow = null;
+
+            // ---- Username change ----
+            if (!string.IsNullOrEmpty(requestedUsername) &&
+                !string.Equals(admin.Credential.Username, requestedUsername, StringComparison.Ordinal))
+            {
+                if (requestedUsername.Length < 3)
+                    return BadRequest(new { message = "Username must be at least 3 characters." });
+
+                // Master uniqueness
+                var takenInMaster = await _master.CompanyUsers
+                    .AnyAsync(cu => cu.Username == requestedUsername);
+                if (takenInMaster)
+                    return Conflict(new { message = "That username is already taken (by another tenant)." });
+
+                // Tenant uniqueness
+                var takenInTenant = await tenant.Credentials
+                    .AsNoTracking()
+                    .AnyAsync(c => c.Username == requestedUsername && c.EmployeeId != admin.EmployeeId);
+                if (takenInTenant)
+                    return Conflict(new { message = "That username is already taken." });
+
+                usernameChanging = true;
+                oldUsername = admin.Credential.Username;
+
+                routingRow = await _master.CompanyUsers
+                    .FirstOrDefaultAsync(cu => cu.CompanyId == id && cu.Username == oldUsername);
+
+                if (routingRow is null)
+                {
+                    return Conflict(new
+                    {
+                        message = "This Admin has no login routing entry. Run the sync-company-users endpoint, then retry."
+                    });
+                }
+
+                // Step 1: master
+                routingRow.Username = requestedUsername;
+                try
+                {
+                    await _master.SaveChangesAsync();
+                }
+                catch (DbUpdateException ex)
+                {
+                    return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+                }
+
+                // Step 2 (partial): tenant credential
+                admin.Credential.Username = requestedUsername;
+                admin.Credential.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // ---- Password change ----
+            if (!string.IsNullOrWhiteSpace(requestedPassword))
+            {
+                if (requestedPassword.Length < 4)
+                    return BadRequest(new { message = "Password must be at least 4 characters." });
+
+                admin.Credential.PasswordHash = BCrypt.Net.BCrypt.HashPassword(requestedPassword);
+                admin.Credential.FailedLoginAttempts = 0;
+                admin.Credential.IsLocked = false;
+                admin.Credential.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // ---- Save tenant (may contain username change and/or password change) ----
+            try
+            {
+                await tenant.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                // Roll back master username change.
+                if (usernameChanging && routingRow is not null && oldUsername is not null)
+                {
+                    try
+                    {
+                        routingRow.Username = oldUsername;
+                        await _master.SaveChangesAsync();
+                    }
+                    catch { /* both writes failed; manual reconciliation needed */ }
+                }
+
+                return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+
+            return Ok(new SuperAdminAdminAccountDto
+            {
+                HasAdmin = true,
+                EmployeeId = admin.EmployeeId,
+                Username = admin.Credential.Username,
+                FirstName = admin.FirstName,
+                LastName = admin.LastName,
+                FullName = (admin.FirstName + " " + admin.LastName).Trim(),
+                Email = string.IsNullOrWhiteSpace(admin.Email) ? null : admin.Email,
+                ContactNumber = admin.ContactNumber,
+                IsActive = admin.IsActive,
+                IsLocked = admin.Credential.IsLocked,
+                LastLoginDate = admin.Credential.LastLoginDate,
+            });
         }
 
         // ---- helpers ----

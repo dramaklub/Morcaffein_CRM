@@ -412,7 +412,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             panel.Controls.Add(roleLabel);
             y += rowHeight;
 
-            // ---- Branch row ----
+            // ---- Branch row (only for Branching-enabled tenants) ----
             editBranchLabel = new Label
             {
                 Text = "Branch *",
@@ -430,6 +430,18 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             };
             panel.Controls.Add(editBranchCombo);
             panel.Controls.Add(editBranchLabel);
+
+            // Tenants without the Branching module don't have branch semantics —
+            // hide the field entirely. The save path below will then send
+            // BranchId = 1 (the tenant's default branch) so the required-FK
+            // rule on Orders/Feedback/Campaigns is still satisfied.
+            var hasBranching = EmployeeSession.Current?.HasModule("Branching") == true;
+            if (!hasBranching)
+            {
+                editBranchLabel.Visible = false;
+                editBranchCombo.Visible = false;
+            }
+
             y += rowHeight;
 
             editUsernameTxtBx = MakeRow("Username * (min 3 chars)");
@@ -528,7 +540,14 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             editBranchLabel.Text = isBarista ? "Branch *" : "Branch (optional)";
 
-            var previousSelection = editBranchCombo.SelectedItem as BranchItem;
+            // Prefer the currently-selected employee's BranchId as the target
+            // selection. Falls back to whatever the combo had selected before.
+            // This is what makes the edit panel show the correct branch when it
+            // opens — the async branch load completes AFTER EnterEditState ran,
+            // so the initial "preselect from emp.BranchId" pass had nothing to
+            // match against.
+            int? desiredBranchId = _selectedEmployee?.BranchId
+                ?? (editBranchCombo.SelectedItem as BranchItem)?.BranchId;
 
             editBranchCombo.Items.Clear();
 
@@ -538,13 +557,13 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             foreach (var b in _branchesCache)
                 editBranchCombo.Items.Add(b);
 
-            // Preserve previous selection if possible
-            if (previousSelection is not null)
+            // Apply the desired selection if found
+            if (desiredBranchId.HasValue)
             {
                 for (int i = 0; i < editBranchCombo.Items.Count; i++)
                 {
                     if (editBranchCombo.Items[i] is BranchItem bi &&
-                        bi.BranchId == previousSelection.BranchId)
+                        bi.BranchId == desiredBranchId.Value)
                     {
                         editBranchCombo.SelectedIndex = i;
                         return;
@@ -552,6 +571,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 }
             }
 
+            // Fallback: index 0 (which will be "All Branches" for Managers, or
+            // the first real branch for Baristas)
             if (editBranchCombo.Items.Count > 0)
                 editBranchCombo.SelectedIndex = 0;
         }
@@ -662,15 +683,28 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 return;
             }
 
-            // ---- Branch validation ----
             var newRole = editRoleCombo.SelectedItem as string ?? "Barista";
             var isBarista = newRole.Equals("Barista", StringComparison.OrdinalIgnoreCase);
-            int? branchId = (editBranchCombo.SelectedItem as BranchItem)?.BranchId;
+            var hasBranching = EmployeeSession.Current?.HasModule("Branching") == true;
 
-            if (isBarista && branchId is null)
+            int? branchId;
+            if (hasBranching)
             {
-                editErrorLabel.Text = "Baristas must be assigned to a branch.";
-                return;
+                branchId = (editBranchCombo.SelectedItem as BranchItem)?.BranchId;
+
+                if (isBarista && branchId is null)
+                {
+                    editErrorLabel.Text = "Baristas must be assigned to a branch.";
+                    return;
+                }
+            }
+            else
+            {
+                // No Branching module: the tenant is single-branch by definition.
+                // Assign everything to Branch 1 (the seeded default) so the
+                // BranchId FK on Orders/Feedback/Campaigns is satisfied when
+                // this employee later creates rows.
+                branchId = 1;
             }
 
             try

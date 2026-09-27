@@ -175,6 +175,12 @@ namespace CRM_Morcaffein.api.Controllers
             if (!logger.Role.Equals("Barista", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "Only baristas can log feedback tickets." });
 
+            // Force the branch to the caller's own if pinned. A Barista can only
+            // log feedback against the branch they're actually assigned to.
+            var effectiveBranchId = await ResolveEffectiveBranchIdAsync(companyId, request.BranchId);
+            if (!effectiveBranchId.HasValue)
+                return BadRequest(new { message = "A valid branch is required." });
+
             var feedback = new Feedback
             {
                 CustomerId = request.CustomerId,
@@ -187,7 +193,7 @@ namespace CRM_Morcaffein.api.Controllers
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
-                BranchId = request.BranchId,
+                BranchId = effectiveBranchId.Value,
             };
 
             tenant.Feedbacks.Add(feedback);
@@ -299,6 +305,26 @@ namespace CRM_Morcaffein.api.Controllers
                 .FirstAsync();
 
             return Ok(result);
+        }
+
+        private async Task<int?> ResolveEffectiveBranchIdAsync(int companyId, int? requestedBranchId)
+        {
+            var empIdClaim = User.FindFirst("employeeId")?.Value;
+            if (!int.TryParse(empIdClaim, out var employeeId))
+                return requestedBranchId;
+
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
+            var callerBranch = await tenant.Employees
+                .AsNoTracking()
+                .Where(e => e.EmployeeId == employeeId)
+                .Select(e => e.BranchId)
+                .FirstOrDefaultAsync();
+
+            if (callerBranch.HasValue)
+                return callerBranch.Value;
+
+            return requestedBranchId;
         }
 
         // POST api/tenant/{companyId}/feedback/{id}/resolve

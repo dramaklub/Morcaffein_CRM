@@ -85,6 +85,40 @@ namespace CRM_Morcaffein.winforms.Services.Api
             var result = await response.Content.ReadFromJsonAsync<TermsDetailDto>();
             return result ?? new TermsDetailDto();
         }
+
+        // GET api/superadmin/companies/{id}/admin
+        public async Task<SuperAdminAdminAccountDto> GetAdminAsync(int companyId)
+        {
+            var response = await _http.GetAsync(
+                $"api/superadmin/companies/{companyId}/admin");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<SuperAdminAdminAccountDto>();
+            return result ?? new SuperAdminAdminAccountDto();
+        }
+
+        // POST api/superadmin/companies/{id}/admin
+        public async Task<SuperAdminAdminAccountDto> CreateAdminAsync(
+            int companyId,
+            CreateCompanyAdminRequest request)
+        {
+            var response = await _http.PostAsJsonAsync(
+                $"api/superadmin/companies/{companyId}/admin", request);
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<SuperAdminAdminAccountDto>();
+            return result ?? throw new InvalidOperationException("API returned an empty admin account.");
+        }
+
+        // PUT api/superadmin/companies/{id}/admin
+        public async Task<SuperAdminAdminAccountDto> UpdateAdminAsync(
+            int companyId,
+            UpdateCompanyAdminRequest request)
+        {
+            var response = await _http.PutAsJsonAsync(
+                $"api/superadmin/companies/{companyId}/admin", request);
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<SuperAdminAdminAccountDto>();
+            return result ?? throw new InvalidOperationException("API returned an empty admin account.");
+        }
         private static async Task EnsureSuccess(HttpResponseMessage response)
         {
             if (response.IsSuccessStatusCode) return;

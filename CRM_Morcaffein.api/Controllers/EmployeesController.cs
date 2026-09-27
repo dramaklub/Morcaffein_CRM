@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using CRM_Morcaffein.api.DTOs;
 using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.infrastructure.data;
 using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,15 +10,19 @@ using Microsoft.EntityFrameworkCore;
 namespace CRM_Morcaffein.api.Controllers
 {
     [ApiController]
-    [Authorize]   // any authenticated employee can hit this controller...
+    [Authorize]
     [Route("api/tenant/{companyId:int}/employees")]
     public class EmployeesController : ControllerBase
     {
         private readonly ITenantDbContextFactory _tenantFactory;
+        private readonly MasterCrmDbContext _master;
 
-        public EmployeesController(ITenantDbContextFactory tenantFactory)
+        public EmployeesController(
+            ITenantDbContextFactory tenantFactory,
+            MasterCrmDbContext master)
         {
             _tenantFactory = tenantFactory;
+            _master = master;
         }
 
         // ---- helpers ----
@@ -175,7 +180,6 @@ namespace CRM_Morcaffein.api.Controllers
             if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 4)
                 return BadRequest(new { message = "Password must be at least 4 characters." });
 
-            // Role — Admin cannot create Admins
             var requestedRole = (request.Role ?? "Barista").Trim();
             if (requestedRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                 requestedRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
@@ -188,12 +192,20 @@ namespace CRM_Morcaffein.api.Controllers
                 return BadRequest(new { message = "Role must be Barista or Manager." });
             }
 
+            var trimmedUsername = request.Username.Trim();
+
+            // Global username uniqueness across ALL tenants — the CompanyUser
+            // routing table has a unique index on Username, and the login flow
+            // resolves a username to exactly one tenant. Two tenants can't
+            // share a username.
+            var usernameTakenInMaster = await _master.CompanyUsers
+                .AnyAsync(cu => cu.Username == trimmedUsername);
+            if (usernameTakenInMaster)
+                return Conflict(new { message = "That username is already taken (by another tenant)." });
+
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
             // ---- Branch validation ----
-            // Baristas MUST be pinned to a branch. Managers may be pinned
-            // OR all-branch (BranchId = null). Admins can't be created here
-            // (blocked above), but if this ever changes, Admins must be null.
             int? resolvedBranchId = request.BranchId;
 
             if (requestedRole.Equals("Barista", StringComparison.OrdinalIgnoreCase) &&
@@ -215,10 +227,10 @@ namespace CRM_Morcaffein.api.Controllers
                     return BadRequest(new { message = $"Branch {resolvedBranchId.Value} not found or is inactive." });
             }
 
-            // Uniqueness of username
-            var usernameTaken = await tenant.Credentials
-                .AnyAsync(c => c.Username == request.Username.Trim());
-            if (usernameTaken)
+            // Uniqueness within the tenant's own Credentials table.
+            var usernameTakenInTenant = await tenant.Credentials
+                .AnyAsync(c => c.Username == trimmedUsername);
+            if (usernameTakenInTenant)
                 return Conflict(new { message = "That username is already taken." });
 
             var employee = new Employee
@@ -236,7 +248,7 @@ namespace CRM_Morcaffein.api.Controllers
 
             var credential = new Credential
             {
-                Username = request.Username.Trim(),
+                Username = trimmedUsername,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
                 Employee = employee,
                 FailedLoginAttempts = 0,
@@ -246,6 +258,28 @@ namespace CRM_Morcaffein.api.Controllers
                 UpdatedAt = DateTime.UtcNow,
             };
 
+            // ---- Step 1: reserve the username in the master routing table ----
+            // Master-first so a failure here doesn't leave orphaned tenant rows
+            // that can't log in. If this succeeds and the tenant write below
+            // fails, we delete this row to keep the two DBs consistent.
+            var routingRow = new CompanyUser
+            {
+                CompanyId = companyId,
+                Username = trimmedUsername,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _master.CompanyUsers.Add(routingRow);
+
+            try
+            {
+                await _master.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+
+            // ---- Step 2: write the tenant-side Employee + Credential ----
             tenant.Employees.Add(employee);
             tenant.Credentials.Add(credential);
 
@@ -255,6 +289,19 @@ namespace CRM_Morcaffein.api.Controllers
             }
             catch (DbUpdateException ex)
             {
+                // Compensating rollback: undo the master row so the username
+                // is free again and the two DBs stay consistent.
+                try
+                {
+                    _master.CompanyUsers.Remove(routingRow);
+                    await _master.SaveChangesAsync();
+                }
+                catch
+                {
+                    // Rollback failed — this is bad but very rare. Log it.
+                    // The sync-company-users endpoint can clean up stragglers.
+                }
+
                 return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
             }
 
@@ -309,16 +356,13 @@ namespace CRM_Morcaffein.api.Controllers
             if (employee is null)
                 return NotFound();
 
-            // Guard: cannot edit an Admin's account
             if (employee.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                 employee.Role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
                 return StatusCode(403, new { message = "Admin accounts cannot be edited from this console." });
 
-            // Guard: cannot edit an inactive employee. Reactivate them first, then edit.
             if (!employee.IsActive)
                 return StatusCode(403, new { message = "Inactive employees cannot be edited. Reactivate them first." });
 
-            // Guard: cannot change someone's role to Admin
             var requestedRole = (request.Role ?? "").Trim();
             if (requestedRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                 requestedRole.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase))
@@ -327,7 +371,6 @@ namespace CRM_Morcaffein.api.Controllers
                 !requestedRole.Equals("Manager", StringComparison.OrdinalIgnoreCase))
                 return BadRequest(new { message = "Role must be Barista or Manager." });
 
-            // ---- Branch validation (same rules as CreateEmployee) ----
             int? resolvedBranchId = request.BranchId;
 
             if (requestedRole.Equals("Barista", StringComparison.OrdinalIgnoreCase) &&
@@ -350,11 +393,11 @@ namespace CRM_Morcaffein.api.Controllers
             }
 
             // ---- Username change (optional) ----
-            // If Username is provided, validate and update the credential in the same
-            // SaveChanges. If it's null/empty, leave it alone. If it matches the current
-            // value, that's a no-op — no error, no unnecessary update.
             var requestedUsername = (request.Username ?? string.Empty).Trim();
             Credential? credential = null;
+            string? oldUsername = null;
+            CompanyUser? routingRow = null;
+            bool usernameChanging = false;
 
             if (!string.IsNullOrEmpty(requestedUsername))
             {
@@ -369,12 +412,47 @@ namespace CRM_Morcaffein.api.Controllers
 
                 if (!string.Equals(credential.Username, requestedUsername, StringComparison.Ordinal))
                 {
-                    // Uniqueness check — case-sensitive, matching CreateEmployee's AnyAsync.
-                    var taken = await tenant.Credentials
+                    usernameChanging = true;
+                    oldUsername = credential.Username;
+
+                    // Uniqueness within the tenant.
+                    var takenInTenant = await tenant.Credentials
                         .AnyAsync(c => c.Username == requestedUsername && c.EmployeeId != employee.EmployeeId);
 
-                    if (taken)
+                    if (takenInTenant)
                         return Conflict(new { message = "That username is already taken." });
+
+                    // Global uniqueness in the master routing table.
+                    var takenInMaster = await _master.CompanyUsers
+                        .AnyAsync(cu => cu.Username == requestedUsername);
+
+                    if (takenInMaster)
+                        return Conflict(new { message = "That username is already taken (by another tenant)." });
+
+                    routingRow = await _master.CompanyUsers
+                        .FirstOrDefaultAsync(cu => cu.CompanyId == companyId && cu.Username == oldUsername);
+
+                    if (routingRow is null)
+                    {
+                        // The routing row is missing — the account can't log in
+                        // anyway. Rather than silently create one, tell the admin
+                        // to run the sync-company-users dev endpoint first.
+                        return Conflict(new
+                        {
+                            message = "This account has no login routing entry. Run the sync-company-users endpoint, then retry."
+                        });
+                    }
+
+                    // ---- Step 1: update the master routing row ----
+                    routingRow.Username = requestedUsername;
+                    try
+                    {
+                        await _master.SaveChangesAsync();
+                    }
+                    catch (DbUpdateException ex)
+                    {
+                        return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+                    }
 
                     credential.Username = requestedUsername;
                     credential.UpdatedAt = DateTime.UtcNow;
@@ -395,10 +473,25 @@ namespace CRM_Morcaffein.api.Controllers
             }
             catch (DbUpdateException ex)
             {
+                // Rollback the master username change if the tenant write failed.
+                if (usernameChanging && routingRow is not null && oldUsername is not null)
+                {
+                    try
+                    {
+                        routingRow.Username = oldUsername;
+                        await _master.SaveChangesAsync();
+                    }
+                    catch
+                    {
+                        // Compensating rollback failed. The two tables are now
+                        // out of sync for this user, and login will fail until
+                        // the username is manually realigned in the master DB.
+                    }
+                }
+
                 return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
             }
 
-            // Reload the credential (AsNoTracking is fine for the response DTO).
             credential = await tenant.Credentials
                 .AsNoTracking()
                 .FirstOrDefaultAsync(c => c.EmployeeId == employee.EmployeeId);
@@ -462,6 +555,11 @@ namespace CRM_Morcaffein.api.Controllers
                 return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
             }
 
+            // The CompanyUser routing row is intentionally left in place —
+            // the tenant-side Credential.IsActive=false check is what refuses
+            // the login. Leaving the routing row means we don't have to
+            // recreate it on reactivate, and the username stays reserved so
+            // another tenant can't take it.
             return NoContent();
         }
 
@@ -533,7 +631,6 @@ namespace CRM_Morcaffein.api.Controllers
                  credential.Employee.Role.Equals("SuperAdmin", StringComparison.OrdinalIgnoreCase)))
                 return StatusCode(403, new { message = "Admin passwords cannot be reset from this console." });
 
-            // Guard: cannot reset a password for an inactive employee. Reactivate first.
             if (credential.Employee is not null && !credential.Employee.IsActive)
                 return StatusCode(403, new { message = "Inactive employees cannot have their password reset. Reactivate them first." });
 

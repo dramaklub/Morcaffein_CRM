@@ -39,6 +39,14 @@ namespace CRM_Morcaffein.winforms.Services
         public int CompletedPointsEarned { get; private set; }
         public string CompletedCustomerName { get; set; } = string.Empty;
 
+        /// <summary>
+        /// The full server response from the completed sale. Populated on
+        /// successful CompleteSaleAsync. Used by the receipt modal — it carries
+        /// the line items, discount breakdown, and post-sale points balance.
+        /// Null before the first sale or after a failed sale.
+        /// </summary>
+        public OrderResponseDto? CompletedOrder { get; private set; }
+
         public TransactionService(
             IReadOnlyList<Product> allProducts,
             IReadOnlyList<string> categories,
@@ -253,6 +261,7 @@ namespace CRM_Morcaffein.winforms.Services
 
             var response = result.Order!;
 
+            CompletedOrder = response;
             CompletedOrderId = response.OrderId;
             CompletedPointsEarned = response.PointsEarned;
             CompletedCustomerName = response.CustomerName;

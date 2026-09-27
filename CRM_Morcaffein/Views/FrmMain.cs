@@ -59,27 +59,35 @@ namespace CRM_Morcaffein.winforms.Views
         private async Task LoadBranchesAsync()
         {
             var role = EmployeeSession.Current?.Employee?.Role ?? "";
+            var callerBranchId = EmployeeSession.Current?.Employee?.BranchId;
             var hasBranching = EmployeeSession.Current?.HasModule("Branching") == true;
 
-            // No Branching entitlement → no selector, and force-session to
-            // the caller's own branch (or fall back to branch 1) so their API
-            // calls are still scoped even though they can't switch.
+            // ---- Case 1: no Branching module ----
+            // The whole concept of branch switching doesn't exist for this
+            // tenant. No selector. Session is scoped to the caller's own
+            // branch if they have one, else to branch 1 (every tenant has at
+            // least one branch — see BranchController deactivate guard).
             if (!hasBranching)
             {
                 branchSelectorPanel.Visible = false;
-                EmployeeSession.Current!.CurrentBranchId =
-                    EmployeeSession.Current.Employee.BranchId ?? 1;
+                EmployeeSession.Current!.CurrentBranchId = callerBranchId ?? 1;
                 return;
             }
 
-            // Baristas are pinned to their own branch and don't get the selector.
-            if (role.Equals("Barista", StringComparison.OrdinalIgnoreCase))
+            // ---- Case 2: pinned caller (Barista always; Manager if assigned) ----
+            // The caller is assigned to a single branch. The selector is
+            // hidden and the session is pinned to their own branch — no
+            // switching. The API enforces this independently.
+            if (callerBranchId.HasValue)
             {
                 branchSelectorPanel.Visible = false;
-                EmployeeSession.Current!.CurrentBranchId = EmployeeSession.Current.Employee.BranchId;
+                EmployeeSession.Current!.CurrentBranchId = callerBranchId.Value;
                 return;
             }
 
+            // ---- Case 3: all-branch caller (Admin, or Manager with no assignment) ----
+            // Full selector: "All Branches" + every active branch. Session
+            // starts on "All Branches" (CurrentBranchId = null).
             try
             {
                 var api = new CRM_Morcaffein.winforms.Services.Api.BranchApi();
@@ -91,13 +99,12 @@ namespace CRM_Morcaffein.winforms.Views
                     branchSelectorCombo.Items.Add(new BranchItem(b.BranchId, b.BranchName));
 
                 branchSelectorCombo.DisplayMember = "Display";
-                branchSelectorCombo.SelectedIndex = 0;   // default = All Branches
+                branchSelectorCombo.SelectedIndex = 0;
 
                 branchSelectorCombo.SelectedIndexChanged += BranchSelectorCombo_SelectedIndexChanged;
             }
             catch (Exception ex)
             {
-                // If branches fail to load, hide the selector and default to all branches.
                 branchSelectorPanel.Visible = false;
                 EmployeeSession.Current!.CurrentBranchId = null;
                 System.Diagnostics.Debug.WriteLine($"Branch load failed: {ex.Message}");

@@ -217,7 +217,7 @@ namespace CRM_Morcaffein.api.Controllers
             // an all-branch Manager may target any branch or create a
             // company-wide campaign (null).
             var (resolvedBranchId, branchError) = await ResolveCampaignBranchAsync(
-                tenant, request.MadeBy, request.BranchId);
+                 tenant, request.BranchId);
 
             if (branchError is not null)
                 return StatusCode(403, new { message = branchError });
@@ -303,7 +303,7 @@ namespace CRM_Morcaffein.api.Controllers
                 return StatusCode(403, new { message = "Only managers can edit campaigns." });
 
             var (resolvedBranchId, branchError) = await ResolveCampaignBranchAsync(
-                tenant, request.MadeBy, request.BranchId);
+                tenant, request.BranchId);
 
             if (branchError is not null)
                 return StatusCode(403, new { message = branchError });
@@ -719,11 +719,16 @@ namespace CRM_Morcaffein.api.Controllers
         /// <summary>
         /// Validates and normalizes the BranchId for a campaign create/update.
         ///
+        /// The caller's identity comes from the JWT (not the request body) so
+        /// a Manager can't bypass the check by sending a different madeBy.
+        ///
         /// Rules:
-        ///   - Pinned Managers (Employee.BranchId != null) must target their
-        ///     own branch. Sending null or another branch is rejected.
-        ///   - All-branch Managers (Employee.BranchId == null) may send any
-        ///     valid branch, or null for a company-wide campaign.
+        ///   - Pinned Managers (JWT caller's Employee.BranchId != null) must
+        ///     target their own branch. Sending null or another branch is
+        ///     rejected. The server uses the caller's own branch regardless
+        ///     of what was sent.
+        ///   - All-branch Managers may send any valid branch, or null for a
+        ///     company-wide campaign.
         ///   - Admins are treated as all-branch.
         ///
         /// Returns the resolved BranchId (null = company-wide) if valid, or
@@ -731,29 +736,29 @@ namespace CRM_Morcaffein.api.Controllers
         /// </summary>
         private async Task<(int? BranchId, string? Error)> ResolveCampaignBranchAsync(
             TenantCrmDbContext tenant,
-            int madeByEmployeeId,
             int? requestedBranchId)
         {
-            var employee = await tenant.Employees
+            var empIdClaim = User.FindFirst("employeeId")?.Value;
+            if (!int.TryParse(empIdClaim, out var callerEmployeeId))
+                return (null, "Missing employeeId claim on the token.");
+
+            var caller = await tenant.Employees
                 .AsNoTracking()
-                .FirstOrDefaultAsync(e => e.EmployeeId == madeByEmployeeId);
+                .FirstOrDefaultAsync(e => e.EmployeeId == callerEmployeeId);
 
-            if (employee is null)
-                return (null, "Creator not found.");
+            if (caller is null)
+                return (null, "Caller not found.");
 
-            var isPinned = employee.BranchId.HasValue;
+            var isPinned = caller.BranchId.HasValue;
 
             if (isPinned)
             {
-                if (!requestedBranchId.HasValue)
-                    return (null, "Managers assigned to a single branch cannot create company-wide campaigns.");
-
-                if (requestedBranchId.Value != employee.BranchId!.Value)
-                    return (null, "Managers can only create campaigns for their own branch.");
-
-                return (employee.BranchId, null);
+                // Pinned Manager: force their own branch regardless of request.
+                return (caller.BranchId, null);
             }
 
+            // All-branch Manager: null means company-wide, otherwise must be
+            // a real, active branch.
             if (!requestedBranchId.HasValue)
                 return (null, null);
 

@@ -44,10 +44,11 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private static readonly SolidBrush DiscountBrush = new(BrandPalette.Brand);
         private static readonly SolidBrush MetaBrush = new(BrandPalette.NeutralTextMuted);
 
-        private static readonly StringFormat EllipsisFormat = new()
+        private static readonly StringFormat WrappingFormat = new()
         {
+            // No NoWrap — the name area is tall enough for two lines, and this
+            // is what stops "Vanilla Matcha Latte" from clipping to "Vanilla Matc…".
             Trimming = StringTrimming.EllipsisCharacter,
-            FormatFlags = StringFormatFlags.NoWrap,
         };
 
         public ApprovalCardControl(CampaignResponseDto campaign)
@@ -87,13 +88,13 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             var nameSize = g.MeasureString(Campaign.PromoName, NameFont);
             var nameWidth = (int)Math.Ceiling(nameSize.Width);
             var nameRect = new RectangleF(CardPadding, Line1Top, nameWidth, Line1Height);
-            g.DrawString(Campaign.PromoName, NameFont, NameBrush, nameRect, EllipsisFormat);
+            g.DrawString(Campaign.PromoName, NameFont, NameBrush, nameRect, WrappingFormat);
 
             var categoryX = CardPadding + nameWidth + 16;
             var categorySize = g.MeasureString(Campaign.PromoCategory, CategoryFont);
             var categoryWidth = (int)Math.Ceiling(categorySize.Width);
             var categoryRect = new RectangleF(categoryX, Line1Top + 4, categoryWidth, Line1Height);
-            g.DrawString(Campaign.PromoCategory, CategoryFont, CategoryBrush, categoryRect, EllipsisFormat);
+            g.DrawString(Campaign.PromoCategory, CategoryFont, CategoryBrush, categoryRect, WrappingFormat);
 
             var discountX = categoryX + categoryWidth + 16;
             var discountText = FormatDiscount(Campaign.DiscountType, Campaign.DiscountValue);
@@ -101,7 +102,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 discountX, Line1Top,
                 Math.Max(0, Width - CardPadding - discountX),
                 Line1Height);
-            g.DrawString(discountText, DiscountFont, DiscountBrush, discountRect, EllipsisFormat);
+            g.DrawString(discountText, DiscountFont, DiscountBrush, discountRect, WrappingFormat);
 
             // ---- Line 2 ----
             // Date range + creator on the left, status pill flush right.
@@ -113,7 +114,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 CardPadding, Line2Top,
                 usableWidth - 160,   // reserve room for the pill on the right
                 Line2Height);
-            g.DrawString(metaText, MetaFont, MetaBrush, metaRect, EllipsisFormat);
+            g.DrawString(metaText, MetaFont, MetaBrush, metaRect, WrappingFormat);
 
             DrawStatusPill(g);
         }
