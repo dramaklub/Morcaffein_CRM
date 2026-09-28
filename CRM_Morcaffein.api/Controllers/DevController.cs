@@ -172,6 +172,57 @@ namespace CRM_Morcaffein.api.Controllers
             return Ok(response);
         }
 
+        // POST api/tenant/{companyId}/dev/sync-test-connection
+        // Temporary — verifies the cloud context factories can open a connection.
+        // Delete once the sync worker is wired up and tested end-to-end.
+        [HttpPost("sync-test-connection")]
+        public async Task<ActionResult> TestCloudConnection(
+            int companyId,
+            [FromServices] ICloudTenantDbContextFactory cloudTenantFactory,
+            [FromServices] ICloudMasterDbContextFactory cloudMasterFactory)
+        {
+            var results = new List<string>();
+
+            // ---- Tenant cloud ----
+            try
+            {
+                await using var cloudTenant = await cloudTenantFactory.CreateAsync(companyId);
+                var orderCount = await cloudTenant.Orders.CountAsync();
+                results.Add($"Cloud tenant {companyId}: OK, Orders count = {orderCount}");
+            }
+            catch (Exception ex)
+            {
+                results.Add($"Cloud tenant {companyId}: FAILED — {ex.Message}");
+            }
+
+            // ---- Master cloud ----
+            try
+            {
+                using var cloudMaster = cloudMasterFactory.Create();
+                var companyCount = await cloudMaster.Companies.CountAsync();
+                results.Add($"Cloud master: OK, Companies count = {companyCount}");
+            }
+            catch (Exception ex)
+            {
+                results.Add($"Cloud master: FAILED — {ex.Message}");
+            }
+
+            return Ok(new { results });
+        }
+
+        // POST api/tenant/{companyId}/dev/sync-now
+        // Temporary — triggers a full master+tenant sync immediately and returns the result.
+        // Will be replaced by the real SyncController once the worker is wired up.
+        [HttpPost("sync-now")]
+        public async Task<ActionResult> SyncNow(
+            int companyId,
+            [FromServices] SyncService syncService)
+        {
+            var tenantResult = await syncService.RunTenantAsync(companyId);
+            var masterResult = await syncService.RunMasterAsync();
+            return Ok(new { tenant = tenantResult, master = masterResult });
+        }
+
         // POST api/tenant/{companyId}/dev/test-email
         //
         // Sends a plain "hello world" test email to the configured

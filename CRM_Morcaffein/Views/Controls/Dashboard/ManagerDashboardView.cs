@@ -269,6 +269,24 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
             return row;
         }
+        /// <summary>
+        /// Translates the date filter's selected preset into a whole-day count
+        /// the API endpoints understand. Custom computes the actual span rather
+        /// than falling through to the "30" default — previously Custom always
+        /// behaved as if 30 days had been picked, regardless of the dates chosen.
+        /// </summary>
+        private int GetEffectiveDays()
+        {
+            return _dateFilter.SelectedPreset switch
+            {
+                DateRangePreset.Today => 1,
+                DateRangePreset.SevenDays => 7,
+                DateRangePreset.OneMonth => 30,
+                DateRangePreset.Custom => Math.Max(1,
+                    (_dateFilter.EndDate.Date - _dateFilter.StartDate.Date).Days + 1),
+                _ => 30,
+            };
+        }
 
         private void SyncWidth()
         {
@@ -286,13 +304,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         {
             try
             {
-                var days = _dateFilter.SelectedPreset switch
-                {
-                    DateRangePreset.Today      => 1,
-                    DateRangePreset.SevenDays  => 7,
-                    _                          => 30,
-                };
-
+                var days = GetEffectiveDays();
                 var branchId = EmployeeSession.Current?.CurrentBranchId;
 
 
@@ -360,12 +372,10 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         private async void ExportBtn_Click(object? sender, EventArgs e)
         {
-            var days = _dateFilter.SelectedPreset switch
-            {
-                DateRangePreset.Today => 1,
-                DateRangePreset.SevenDays => 7,
-                _ => 30,
-            };
+            var days = GetEffectiveDays();
+            var branchId = EmployeeSession.Current?.CurrentBranchId;
+
+            // Step 1 — ask which report.
 
             // Step 1 — ask which report.
             using var picker = new ExportReportTypeModal(
@@ -399,8 +409,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
                 var report = new ReportService();
                 var bytes = isLedger
-                    ? await report.GenerateTransactionLedgerAsync(days)
-                    : await report.GenerateManagerReportAsync(days);
+                    ? await report.GenerateTransactionLedgerAsync(days, branchId)
+                    : await report.GenerateManagerReportAsync(days, branchId);
 
                 await File.WriteAllBytesAsync(dlg.FileName, bytes);
 

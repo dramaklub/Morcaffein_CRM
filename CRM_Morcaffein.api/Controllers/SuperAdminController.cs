@@ -213,7 +213,11 @@ namespace CRM_Morcaffein.api.Controllers
             _master.Subscriptions.Add(subscription);
 
             // Update the fast-path field on Company.
+            // IsSynced = false so the master sync worker pushes the plan
+            // change to the cloud master on the next tick. New Subscription
+            // rows default to IsSynced = false already.
             company.CurrentPlanId = request.PlanId;
+            company.IsSynced = false;
 
             try
             {
@@ -323,6 +327,55 @@ namespace CRM_Morcaffein.api.Controllers
                 return NotFound(new { message = $"Terms document {id} not found." });
 
             return Ok(terms);
+        }
+
+        // PUT api/superadmin/terms/{id}
+        //
+        // Updates the body of a T&C document. Title, plan binding, and
+        // effective date are not editable — set at provisioning.
+        //
+        // Version is auto-bumped (1.1 → 1.2) so the version string always
+        // refers to a specific revision. Flips IsSynced = false so the
+        // worker pushes the change to cloud on the next tick.
+        [HttpPut("terms/{id:int}")]
+        public async Task<ActionResult<TermsDetailDto>> UpdateTerms(int id, UpdateTermsRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Body))
+                return BadRequest(new { message = "Body text is required." });
+
+            var terms = await _master.TermsAndConditions
+                .Include(t => t.Plan)
+                .FirstOrDefaultAsync(t => t.TermsId == id);
+
+            if (terms is null)
+                return NotFound(new { message = $"Terms document {id} not found." });
+
+            terms.Body = request.Body.Trim();
+            terms.Version = BumpVersion(terms.Version);
+            terms.UpdatedAt = DateTime.UtcNow;
+            terms.IsSynced = false;   // worker will push this change
+
+            try
+            {
+                await _master.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                return Conflict(new { message = ex.InnerException?.Message ?? ex.Message });
+            }
+
+            return Ok(new TermsDetailDto
+            {
+                TermsId = terms.TermsId,
+                PlanId = terms.PlanId,
+                PlanName = terms.Plan?.Name,
+                Title = terms.Title,
+                Body = terms.Body,
+                Version = terms.Version,
+                EffectiveFrom = terms.EffectiveFrom,
+                CreatedAt = terms.CreatedAt,
+                UpdatedAt = terms.UpdatedAt,
+            });
         }
 
         // =====================================================================
@@ -611,6 +664,7 @@ namespace CRM_Morcaffein.api.Controllers
 
                 // Step 1: master
                 routingRow.Username = requestedUsername;
+                routingRow.IsSynced = false;   // worker pushes the renamed routing row
                 try
                 {
                     await _master.SaveChangesAsync();
@@ -623,6 +677,7 @@ namespace CRM_Morcaffein.api.Controllers
                 // Step 2 (partial): tenant credential
                 admin.Credential.Username = requestedUsername;
                 admin.Credential.UpdatedAt = DateTime.UtcNow;
+                admin.Credential.IsSynced = false;   // worker pushes the renamed credential
             }
 
             // ---- Password change ----
@@ -635,6 +690,7 @@ namespace CRM_Morcaffein.api.Controllers
                 admin.Credential.FailedLoginAttempts = 0;
                 admin.Credential.IsLocked = false;
                 admin.Credential.UpdatedAt = DateTime.UtcNow;
+                admin.Credential.IsSynced = false;   // worker pushes the new password hash
             }
 
             // ---- Save tenant (may contain username change and/or password change) ----
@@ -672,6 +728,26 @@ namespace CRM_Morcaffein.api.Controllers
                 IsLocked = admin.Credential.IsLocked,
                 LastLoginDate = admin.Credential.LastLoginDate,
             });
+        }
+
+        /// <summary>
+        /// Bumps a "major.minor" version string. 1.1 → 1.2, 1.9 → 1.10, 2.0 → 2.1.
+        /// Non-numeric versions fall back to "1.1".
+        /// </summary>
+        private static string BumpVersion(string current)
+        {
+            if (string.IsNullOrWhiteSpace(current))
+                return "1.1";
+
+            var parts = current.Split('.');
+            if (parts.Length != 2 ||
+                !int.TryParse(parts[0], out var major) ||
+                !int.TryParse(parts[1], out var minor))
+            {
+                return "1.1";
+            }
+
+            return $"{major}.{minor + 1}";
         }
 
         // ---- helpers ----

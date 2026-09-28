@@ -86,6 +86,19 @@ namespace CRM_Morcaffein.winforms.Services.Api
             return result ?? new TermsDetailDto();
         }
 
+        // PUT api/superadmin/terms/{id}
+        public async Task<TermsDetailDto> UpdateTermsAsync(int termsId, string body)
+        {
+            var request = new UpdateTermsRequest { Body = body };
+
+            var response = await _http.PutAsJsonAsync(
+                $"api/superadmin/terms/{termsId}", request);
+
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<TermsDetailDto>();
+            return result ?? throw new InvalidOperationException("API returned an empty terms document.");
+        }
+
         // GET api/superadmin/companies/{id}/admin
         public async Task<SuperAdminAdminAccountDto> GetAdminAsync(int companyId)
         {

@@ -18,6 +18,7 @@ public class CompanyUser
     /// <summary>The tenant this username resolves to.</summary>
     public int CompanyId { get; set; }
     public Company? Company { get; set; }
+    public bool IsSynced { get; set; } = false;
 
     /// <summary>
     /// Globally unique across all tenants — two companies can't both have

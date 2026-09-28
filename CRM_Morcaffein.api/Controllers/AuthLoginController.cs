@@ -5,6 +5,8 @@ using CRM_Morcaffein.infrastructure.services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace CRM_Morcaffein.api.Controllers
 {
@@ -26,15 +28,21 @@ namespace CRM_Morcaffein.api.Controllers
         private readonly MasterCrmDbContext _master;
         private readonly ITenantDbContextFactory _tenantFactory;
         private readonly JwtTokenService _jwt;
+        private readonly IServiceScopeFactory _scopeFactory;
+        private readonly ILogger<AuthLoginController> _logger;
 
         public AuthLoginController(
             MasterCrmDbContext master,
             ITenantDbContextFactory tenantFactory,
-            JwtTokenService jwt)
+            JwtTokenService jwt,
+            IServiceScopeFactory scopeFactory,
+            ILogger<AuthLoginController> logger)
         {
             _master = master;
             _tenantFactory = tenantFactory;
             _jwt = jwt;
+            _scopeFactory = scopeFactory;
+            _logger = logger;
         }
 
         // POST api/auth/login
@@ -115,6 +123,50 @@ namespace CRM_Morcaffein.api.Controllers
             // ---- 6. Issue token ----
             var token = _jwt.CreateToken(employee, routing.CompanyId);
             var expiresAt = _jwt.GetExpiryUtc();
+
+            // ---- 7. Fire-and-forget sync for this company ----
+            // Kicks off a sync pass for the tenant the user just logged into.
+            // The point is to push anything that's been pending since their
+            // last session, without making the login wait for a cloud round-
+            // trip. Failures are captured inside SyncService and reported
+            // via SyncStatusStore (which the topbar indicator polls).
+            //
+            // We resolve SyncService from a fresh scope because the request
+            // scope is disposed when this endpoint returns — the background
+            // task outlives it.
+            var companyIdForSync = routing.CompanyId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var syncService = scope.ServiceProvider.GetRequiredService<SyncService>();
+                    var result = await syncService.RunTenantAsync(companyIdForSync);
+
+                    if (result.Success)
+                    {
+                        _logger.LogInformation(
+                            "[Login-sync] Company {CompanyId}: OK. Synced {Synced}, took {Ms}ms.",
+                            companyIdForSync,
+                            result.TotalRowsSynced,
+                            (result.FinishedAt - result.StartedAt).TotalMilliseconds);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "[Login-sync] Company {CompanyId}: FAILED — {Error}",
+                            companyIdForSync, result.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // SyncService already captures exceptions, so this is
+                    // belt-and-suspenders for bugs in the service itself.
+                    _logger.LogError(ex,
+                        "[Login-sync] Company {CompanyId}: unexpected error.",
+                        companyIdForSync);
+                }
+            });
 
             return Ok(new LoginResponse
             {

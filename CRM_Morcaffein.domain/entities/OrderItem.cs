@@ -18,6 +18,8 @@ public class OrderItem
     public decimal UnitPrice { get; set; }
     public decimal SubTotal { get; set; }
 
+    public bool IsSynced { get; set; } = false;
+
     public virtual Order? Order { get; set; }
     public virtual Product? Product { get; set; }
     public virtual ProductSize? ProductSize { get; set; }

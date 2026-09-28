@@ -19,6 +19,7 @@ public class SuperAdmin
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    public bool IsSynced { get; set; } = false;
     public DateTime? LastLoginDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

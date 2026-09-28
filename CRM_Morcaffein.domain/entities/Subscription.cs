@@ -27,6 +27,8 @@ public class Subscription
 
     /// <summary>The plan the company is subscribed to during this period.</summary>
     public int PlanId { get; set; }
+
+    public bool IsSynced { get; set; } = false;
     public Plan? Plan { get; set; }
 
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;

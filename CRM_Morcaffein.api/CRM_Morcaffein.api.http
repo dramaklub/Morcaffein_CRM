@@ -1,46 +1,22 @@
-### Admin login
-# @name adminLogin
-POST http://localhost:5035/api/auth/login
+### SuperAdmin login
+# @name saLogin
+POST http://localhost:5035/api/superadmin/auth/login
 Content-Type: application/json
 
 {
-  "username": "jason.kub",
-  "password": "pass"
+  "username": "superadmin",
+  "password": "password123"
 }
 
-### Exact ID match (should return 1 customer)
-GET http://localhost:5035/api/tenant/1/customers/find?query=1
-Authorization: Bearer {{adminLogin.response.body.$.token}}
+### Get T&C #1
+GET http://localhost:5035/api/superadmin/terms/1
+Authorization: Bearer {{saLogin.response.body.$.token}}
 
-### Partial-digit phone (should 404 now, not match everyone)
-GET http://localhost:5035/api/tenant/1/customers/find?query=1
-Authorization: Bearer {{adminLogin.response.body.$.token}}
-
-### Exact phone (should match the customer with that number)
-GET http://localhost:5035/api/tenant/1/customers/find?query=09790849413
-Authorization: Bearer {{adminLogin.response.body.$.token}}
-
-### Exact ID that doesn't exist but the number parses (should fall through to phone, likely 404)
-GET http://localhost:5035/api/tenant/1/customers/find?query=999
-Authorization: Bearer {{adminLogin.response.body.$.token}}
-
-###
-POST http://localhost:5035/api/tenant/1/orders
-Authorization: Bearer {{adminLogin.response.body.$.token}}
+### Update T&C #1
+PUT http://localhost:5035/api/superadmin/terms/1
+Authorization: Bearer {{saLogin.response.body.$.token}}
 Content-Type: application/json
 
 {
-  "customerId": 151,
-  "createdBy": 20,
-  "branchId": 1,
-  "hasPwdSeniorDiscount": false,
-  "campaignId": null,
-  "lines": [
-    {
-      "productId": 1,
-      "productSizeId": 1,
-      "quantity": 1,
-      "modifierIds": []
-    }
-  ]
-}
+  "body": "PLACEHOLDER — testing the PUT endpoint.\n\nReal text will be restored before the demo."
+}   

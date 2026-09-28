@@ -89,5 +89,14 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             Invalidate();
         }
+
+        /// <summary>
+        /// Updates the version string displayed on the card. Called by the
+        /// host view after a successful save bumps the version server-side.
+        /// </summary>
+        public void SetVersion(string version)
+        {
+            _versionLabel.Text = $"Version {version}";
+        }
     }
 }

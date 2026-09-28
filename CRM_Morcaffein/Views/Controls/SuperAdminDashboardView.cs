@@ -18,6 +18,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
     {
         private readonly SuperAdminApi _api;
 
+        // Header actions
+        private Button _exportBtn = null!;
+
         // KPIs
         private Label _companiesValueLabel = null!;
         private Label _subscriptionsValueLabel = null!;
@@ -68,7 +71,16 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 BackColor = Color.Transparent,
             };
 
-            // ---- Title ----
+            // ---- Title row (title + export button) ----
+            var headerRow = new Panel
+            {
+                Width = 900,
+                Height = 62,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0, 0, 0, 8),
+            };
+            headerRow.Resize += (s, e) => SyncFlowChildWidth(stack, headerRow);
+
             var titleLabel = new Label
             {
                 Text = "Platform Overview",
@@ -76,9 +88,9 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Font = BrandPalette.BrandFontBold(16f),
                 ForeColor = BrandPalette.NeutralText,
                 BackColor = Color.Transparent,
-                Margin = new Padding(0, 0, 0, 4),
+                Location = new Point(0, 0),
             };
-            stack.Controls.Add(titleLabel);
+            headerRow.Controls.Add(titleLabel);
 
             var subtitleLabel = new Label
             {
@@ -87,9 +99,37 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Font = BrandPalette.BrandFontRegular(9f),
                 ForeColor = BrandPalette.NeutralTextMuted,
                 BackColor = Color.Transparent,
-                Margin = new Padding(0, 0, 0, 20),
+                Location = new Point(0, 28),
             };
-            stack.Controls.Add(subtitleLabel);
+            headerRow.Controls.Add(subtitleLabel);
+
+            _exportBtn = new Button
+            {
+                Text = "Export PDF",
+                Size = new Size(120, 34),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = BrandPalette.ButtonSecondaryFill,
+                ForeColor = BrandPalette.ButtonSecondaryText,
+                Font = BrandPalette.BrandFontRegular(9.5f),
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+            };
+            _exportBtn.FlatAppearance.BorderSize = 0;
+            _exportBtn.Click += ExportBtn_Click;
+            headerRow.Controls.Add(_exportBtn);
+
+            // Position the export button on the right edge of the header.
+            void PositionExportButton()
+            {
+                if (_exportBtn is null || headerRow is null) return;
+                _exportBtn.Location = new Point(
+                    Math.Max(0, headerRow.ClientSize.Width - _exportBtn.Width),
+                    4);
+            }
+            headerRow.Resize += (s, e) => PositionExportButton();
+            PositionExportButton();
+
+            stack.Controls.Add(headerRow);
 
             // ---- KPI strip ----
             var kpiRow = new TableLayoutPanel
@@ -335,6 +375,50 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             if (flow.ClientSize.Width <= 0) return;
             child.Width = Math.Max(300, flow.ClientSize.Width - 4);
         }
+
+        // =====================================================================
+        // EXPORT
+        // =====================================================================
+
+        private async void ExportBtn_Click(object? sender, EventArgs e)
+        {
+            using var dlg = new SaveFileDialog
+            {
+                Filter = "PDF files (*.pdf)|*.pdf",
+                FileName = $"Morcaffein-Platform-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf",
+                Title = "Save platform report",
+                OverwritePrompt = true,
+            };
+
+            if (dlg.ShowDialog(FindForm()) != DialogResult.OK)
+                return;
+
+            try
+            {
+                _exportBtn.Enabled = false;
+                _exportBtn.Text = "Generating…";
+
+                var report = new Services.ReportService();
+                var bytes = await report.GenerateSuperAdminReportAsync();
+
+                await File.WriteAllBytesAsync(dlg.FileName, bytes);
+
+                Toast.Show(this, $"Report saved to {Path.GetFileName(dlg.FileName)}.", ToastKind.Success);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(FindForm(), ex.Message, "Export failed");
+            }
+            finally
+            {
+                _exportBtn.Enabled = true;
+                _exportBtn.Text = "Export PDF";
+            }
+        }
+
+        // =====================================================================
+        // LOAD
+        // =====================================================================
 
         // =====================================================================
         // LOAD

@@ -5,34 +5,44 @@ using CRM_Morcaffein.winforms.Services.Api;
 namespace CRM_Morcaffein.winforms.Views.Controls
 {
     /// <summary>
-    /// SuperAdmin tab: view Terms & Conditions documents. One card per plan
-    /// on the left; the selected document's body shows in a scrollable panel
-    /// on the right.
+    /// SuperAdmin tab: view and edit Terms & Conditions documents. One card
+    /// per plan on the left; the selected document's body shows in a
+    /// scrollable panel on the right.
     ///
-    /// Read-only. Editing the T&C content is a future feature — for now this
-    /// is reference material for the platform operator (and a place to show
-    /// which version is currently effective).
+    /// Read-only by default. Click Edit to arm editing; Save commits (with
+    /// an auto-bumped version), Cancel reverts. Explicit mode because T&C
+    /// is legal text — accidental keystrokes shouldn't silently modify it.
     ///
-    /// Mirrors the Branch Management / Manage Users "cards + detail panel"
-    /// shape, but the detail panel here is a plain scrolling text area,
-    /// not a form.
+    /// Save flips IsSynced = false on the server, so the master sync worker
+    /// pushes the updated row to cloud within ~20 seconds.
     /// </summary>
     public class TermsAndConditionsView : UserControl
     {
         private readonly SuperAdminApi _api;
 
-        // Layout
+        // Layout — cards column
         private Panel _cardsColumnPanel = null!;
+
+        // Layout — detail panel
         private Panel _detailPanel = null!;
         private Label _detailTitleLabel = null!;
         private Label _detailMetaLabel = null!;
         private RichTextBox _detailBodyBox = null!;
         private Label _detailEmptyLabel = null!;
 
+        // Layout — top-of-detail action row (Edit/Save/Cancel buttons)
+        private Panel _detailActionsPanel = null!;
+        private Button _editBtn = null!;
+        private Button _saveBtn = null!;
+        private Button _cancelBtn = null!;
+
         // State
         private List<TermsSummaryDto> _terms = new();
         private List<TermsCardControl> _cards = new();
         private int? _selectedTermsId;
+        private TermsDetailDto? _loadedDetail;   // current doc — used to revert on Cancel
+        private string _loadedBodyOriginal = string.Empty;
+        private bool _isEditing;
 
         public TermsAndConditionsView()
         {
@@ -74,7 +84,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             };
 
             _cardsColumnPanel.Controls.Add(cardsHost);
-            _cardsColumnPanel.Tag = cardsHost;   // stash the scroll host for later
+            _cardsColumnPanel.Tag = cardsHost;
 
             // ---------- Right detail panel ----------
             _detailPanel = new Panel
@@ -85,15 +95,52 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Padding = new Padding(28),
             };
 
-            _detailTitleLabel = new Label
+            // ---- Title row (title label + Edit/Save/Cancel buttons on the right) ----
+            var titleRow = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 30,
+                Height = 38,
+                BackColor = Color.Transparent,
+            };
+
+            _detailTitleLabel = new Label
+            {
+                Dock = DockStyle.Fill,
                 Font = BrandPalette.BrandFontBold(14f),
                 ForeColor = BrandPalette.NeutralText,
                 BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
                 Text = "",
             };
+
+            _detailActionsPanel = new Panel
+            {
+                Dock = DockStyle.Right,
+                Width = 300,
+                BackColor = Color.Transparent,
+            };
+
+            _editBtn = MakeActionButton("Edit", isPrimary: false);
+            _editBtn.Click += (s, e) => EnterEditMode();
+
+            _saveBtn = MakeActionButton("Save", isPrimary: true);
+            _saveBtn.Click += async (s, e) => await SaveAsync();
+
+            _cancelBtn = MakeActionButton("Cancel", isPrimary: false);
+            _cancelBtn.Click += (s, e) => ExitEditMode(revert: true);
+
+            // Position right-to-left: Save, Cancel, Edit
+            _saveBtn.Left = 300 - _saveBtn.Width;
+            _cancelBtn.Left = _saveBtn.Left - 8 - _cancelBtn.Width;
+            _editBtn.Left = _cancelBtn.Left - 8 - _editBtn.Width;
+            _saveBtn.Top = _cancelBtn.Top = _editBtn.Top = 3;
+
+            _detailActionsPanel.Controls.Add(_saveBtn);
+            _detailActionsPanel.Controls.Add(_cancelBtn);
+            _detailActionsPanel.Controls.Add(_editBtn);
+
+            titleRow.Controls.Add(_detailTitleLabel);
+            titleRow.Controls.Add(_detailActionsPanel);
 
             _detailMetaLabel = new Label
             {
@@ -105,7 +152,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Text = "",
             };
 
-            // Spacer below the meta line.
             var detailSpacer = new Panel
             {
                 Dock = DockStyle.Top,
@@ -113,9 +159,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 BackColor = Color.Transparent,
             };
 
-            // The body text. RichTextBox so it scrolls natively and shows
-            // multi-line plain text with proper wrapping. Read-only — this
-            // is a viewer, not an editor.
+            // The body text. Read-only unless Edit mode is active.
             _detailBodyBox = new RichTextBox
             {
                 Dock = DockStyle.Fill,
@@ -141,17 +185,32 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 Visible = true,
             };
 
+            // Add order matters: Fill (body/empty) first, then Top-docked
+            // in bottom-to-top order (spacer, meta, title row).
             _detailPanel.Controls.Add(_detailBodyBox);
             _detailPanel.Controls.Add(_detailEmptyLabel);
             _detailPanel.Controls.Add(detailSpacer);
             _detailPanel.Controls.Add(_detailMetaLabel);
-            _detailPanel.Controls.Add(_detailTitleLabel);
+            _detailPanel.Controls.Add(titleRow);
 
             bodyPanel.Controls.Add(_detailPanel);
             bodyPanel.Controls.Add(_cardsColumnPanel);
 
             Controls.Add(bodyPanel);
+
+            UpdateActionButtonVisibility();
         }
+
+        private static Button MakeActionButton(string text, bool isPrimary) => new()
+        {
+            Text = text,
+            Size = new Size(90, 32),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = isPrimary ? BrandPalette.ButtonPrimaryFill : BrandPalette.ButtonSecondaryFill,
+            ForeColor = isPrimary ? BrandPalette.ButtonPrimaryText : BrandPalette.ButtonSecondaryText,
+            Font = BrandPalette.BrandFontBold(9.5f),
+            Cursor = Cursors.Hand,
+        };
 
         // =====================================================================
         // DATA LOADING
@@ -171,7 +230,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             PopulateCards();
 
-            // Auto-select the first card so the detail panel isn't empty on load.
             if (_terms.Count > 0)
                 await SelectTermsAsync(_terms[0].TermsId);
             else
@@ -181,6 +239,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _detailBodyBox.Visible = false;
                 _detailTitleLabel.Text = "";
                 _detailMetaLabel.Text = "";
+                UpdateActionButtonVisibility();
             }
         }
 
@@ -206,8 +265,6 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 cardsHost.Controls.Add(card);
             }
 
-            // Reverse z-order so the first card sits at the top of the
-            // scrolling stack (docked Top controls stack bottom-up).
             for (int i = cardsHost.Controls.Count - 1; i >= 0; i--)
                 cardsHost.Controls.SetChildIndex(cardsHost.Controls[i], cardsHost.Controls.Count - 1 - i);
 
@@ -216,17 +273,33 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         private async Task SelectTermsAsync(int termsId)
         {
+            // Guard: don't switch while editing — the user might lose text.
+            // If editing, ask first.
+            if (_isEditing)
+            {
+                var confirm = MessageBox.Show(
+                    FindForm(),
+                    "Discard unsaved changes and switch to another document?",
+                    "Unsaved Changes",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (confirm != DialogResult.Yes)
+                    return;
+
+                ExitEditMode(revert: true);
+            }
+
             _selectedTermsId = termsId;
             HighlightSelectedCard();
 
-            // Immediately show "Loading…" so we don't render stale content
-            // while the detail fetch is in flight.
             _detailTitleLabel.Text = "";
             _detailMetaLabel.Text = "";
             _detailBodyBox.Text = "";
             _detailBodyBox.Visible = false;
             _detailEmptyLabel.Text = "Loading…";
             _detailEmptyLabel.Visible = true;
+            UpdateActionButtonVisibility();
 
             TermsDetailDto detail;
             try
@@ -238,8 +311,13 @@ namespace CRM_Morcaffein.winforms.Views.Controls
                 _detailEmptyLabel.Text = $"Could not load: {ex.Message}";
                 _detailEmptyLabel.Visible = true;
                 _detailBodyBox.Visible = false;
+                _loadedDetail = null;
+                UpdateActionButtonVisibility();
                 return;
             }
+
+            _loadedDetail = detail;
+            _loadedBodyOriginal = detail.Body;
 
             _detailTitleLabel.Text = detail.Title;
             _detailMetaLabel.Text =
@@ -252,12 +330,115 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
             _detailBodyBox.Visible = true;
             _detailEmptyLabel.Visible = false;
+
+            UpdateActionButtonVisibility();
         }
 
         private void HighlightSelectedCard()
         {
             foreach (var card in _cards)
                 card.SetSelected(card.TermsId == _selectedTermsId);
+        }
+
+        // =====================================================================
+        // EDIT / SAVE / CANCEL
+        // =====================================================================
+
+        private void EnterEditMode()
+        {
+            if (_loadedDetail is null) return;
+
+            _isEditing = true;
+            _detailBodyBox.ReadOnly = false;
+            _detailBodyBox.BackColor = Color.FromArgb(255, 252, 246);   // subtle warm tint
+            _detailBodyBox.Focus();
+
+            UpdateActionButtonVisibility();
+        }
+
+        private void ExitEditMode(bool revert)
+        {
+            if (revert)
+                _detailBodyBox.Text = _loadedBodyOriginal;
+
+            _isEditing = false;
+            _detailBodyBox.ReadOnly = true;
+            _detailBodyBox.BackColor = BrandPalette.SurfacePrimary;
+
+            UpdateActionButtonVisibility();
+        }
+
+        private async Task SaveAsync()
+        {
+            if (_loadedDetail is null || _selectedTermsId is null) return;
+
+            var newBody = _detailBodyBox.Text;
+            if (string.IsNullOrWhiteSpace(newBody))
+            {
+                Toast.Show(this, "Body text cannot be empty.", ToastKind.Error);
+                return;
+            }
+
+            if (string.Equals(newBody, _loadedBodyOriginal, StringComparison.Ordinal))
+            {
+                Toast.Show(this, "No changes to save.", ToastKind.Info);
+                ExitEditMode(revert: false);
+                return;
+            }
+
+            _saveBtn.Enabled = false;
+            _saveBtn.Text = "Saving…";
+
+            try
+            {
+                var updated = await _api.UpdateTermsAsync(_selectedTermsId.Value, newBody);
+
+                // Refresh local state and UI from the server's response.
+                _loadedDetail = updated;
+                _loadedBodyOriginal = updated.Body;
+
+                _detailTitleLabel.Text = updated.Title;
+                _detailMetaLabel.Text =
+                    $"Version {updated.Version}   ·   Effective {updated.EffectiveFrom:MMMM d, yyyy}" +
+                    (string.IsNullOrWhiteSpace(updated.PlanName) ? "" : $"   ·   Applies to the {updated.PlanName} plan");
+
+                _detailBodyBox.Text = updated.Body;
+
+                // Update the card's version label — the left-side card shows the version.
+                UpdateCardVersion(updated.TermsId, updated.Version);
+
+                ExitEditMode(revert: false);
+
+                Toast.Show(this, $"Saved. Version bumped to {updated.Version}.", ToastKind.Success);
+            }
+            catch (Exception ex)
+            {
+                Toast.Show(this, $"Save failed: {ex.Message}", ToastKind.Error);
+            }
+            finally
+            {
+                _saveBtn.Enabled = true;
+                _saveBtn.Text = "Save";
+            }
+        }
+
+        private void UpdateCardVersion(int termsId, string newVersion)
+        {
+            // The card control holds its own TermsSummaryDto. Rather than
+            // walking the control tree, we rebuild the card display by
+            // looking it up and calling a small setter we add to
+            // TermsCardControl.
+            var card = _cards.FirstOrDefault(c => c.TermsId == termsId);
+            card?.SetVersion(newVersion);
+        }
+
+        private void UpdateActionButtonVisibility()
+        {
+            var hasDoc = _loadedDetail is not null;
+
+            _editBtn.Visible = hasDoc && !_isEditing;
+            _saveBtn.Visible = hasDoc && _isEditing;
+            _cancelBtn.Visible = hasDoc && _isEditing;
         }
     }
 }

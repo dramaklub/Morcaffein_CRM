@@ -131,7 +131,7 @@ namespace CRM_Morcaffein.winforms.Views
             // FrmMain.cs from the /branches endpoint after login. Baristas never see
             // this — the panel is hidden if the user's role doesn't allow branch switching.
             branchSelectorPanel.Dock = DockStyle.Right;
-            branchSelectorPanel.Width = 240;
+            branchSelectorPanel.Width = 264;
             branchSelectorPanel.BackColor = Color.Transparent;
             branchSelectorPanel.Padding = new Padding(0, 14, 22, 14);
             branchSelectorPanel.Location = new Point(320, 0);

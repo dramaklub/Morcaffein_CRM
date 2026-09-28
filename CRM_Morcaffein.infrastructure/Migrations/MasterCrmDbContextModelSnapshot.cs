@@ -49,6 +49,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.HasKey("CompanyId");
 
                     b.HasIndex("CompanyCode")
@@ -67,6 +70,14 @@ namespace CRM_Morcaffein.infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CompanyDatabaseId"));
 
+                    b.Property<string>("CloudDatabaseName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CloudServerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<int>("CompanyId")
                         .HasColumnType("int");
 
@@ -80,6 +91,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<string>("ServerName")
@@ -107,6 +121,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Username")
                         .IsRequired()
@@ -175,6 +192,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ModulesCsv")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -216,6 +236,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
 
                     b.Property<DateTime?>("EndedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
 
                     b.Property<int>("PlanId")
                         .HasColumnType("int");
@@ -266,6 +289,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime?>("LastLoginDate")
                         .HasColumnType("datetime2");
 
@@ -307,6 +333,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations
 
                     b.Property<DateTime>("EffectiveFrom")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
 
                     b.Property<int?>("PlanId")
                         .HasColumnType("int");

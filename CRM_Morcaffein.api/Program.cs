@@ -7,6 +7,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -90,6 +94,14 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddScoped<ITenantDatabaseResolver, TenantDatabaseResolver>();
 builder.Services.AddScoped<ITenantDbContextFactory, TenantDbContextFactory>();
+builder.Services.AddScoped<ICloudTenantDbContextFactory, CloudTenantDbContextFactory>();
+builder.Services.AddSingleton<ICloudMasterDbContextFactory, CloudMasterDbContextFactory>();
+
+builder.Services.AddScoped<SyncService>();
+builder.Services.AddSingleton<SyncStatusStore>();
+// Sync — worker + options binding
+builder.Services.Configure<SyncOptions>(builder.Configuration.GetSection("Sync"));
+builder.Services.AddHostedService<SyncWorker>();
 
 var app = builder.Build();
 

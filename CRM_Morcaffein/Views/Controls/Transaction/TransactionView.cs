@@ -723,6 +723,13 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             _promoMenuBtn.Click += (s, e) => ShowPromoMenu();
             ButtonStyler.TrackEnabledState(_promoMenuBtn);
 
+            // Hide the promo selector for tenants without the Actions module.
+            // Basic tier doesn't have campaigns at all — the button shouldn't
+            // exist. The surrounding promoRow still takes its 44px of vertical
+            // space (same call we made for the Manage Users branch field) — the
+            // layout doesn't collapse, the button is just gone.
+            _promoMenuBtn.Visible = EmployeeSession.Current?.HasModule("Actions") == true;
+
             promoRow.Controls.Add(_promoMenuBtn);
 
             box.Controls.Add(summaryTable);
@@ -1007,6 +1014,11 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         private void ShowPromoMenu()
         {
             if (_controller is null)
+                return;
+
+            // Defence in depth — even if something triggers this handler
+            // programmatically for a Basic tenant, we won't show the menu.
+            if (EmployeeSession.Current?.HasModule("Actions") != true)
                 return;
 
             var menu = new ContextMenuStrip

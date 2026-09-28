@@ -167,6 +167,127 @@ namespace CRM_Morcaffein.winforms.Services.Reports
             return doc;
         }
 
+        /// <summary>
+        /// Platform-wide report for the SuperAdmin. Same data as the on-screen
+        /// SuperAdmin Dashboard — KPI summary, companies-per-plan distribution,
+        /// recent subscriptions.
+        ///
+        /// Deliberately not date-ranged: the platform metrics are always "as of
+        /// now" (current companies, current plans, current MRR). Subscription
+        /// history is naturally ordered by StartedAt and capped at the same
+        /// top-10 the dashboard shows.
+        /// </summary>
+        public static ReportDocument BuildSuperAdmin(SuperAdminDashboardDto dashboard)
+        {
+            var doc = new ReportDocument
+            {
+                Title = "Morcaffein — Platform Report",
+                Subtitle = "SuperAdmin summary",
+                PeriodLabel = "As of " + DateTime.Now.ToString("MMMM d, yyyy HH:mm"),
+                GeneratedBy = Session.EmployeeSession.Current?.DisplayName ?? "SuperAdmin",
+                GeneratedAt = DateTime.Now,
+            };
+
+            // ---- Section 1: KPI summary ----
+            doc.Sections.Add(new ReportSection
+            {
+                Heading = "Key Metrics",
+                Blocks =
+                {
+                    new MetricStripBlock
+                    {
+                        Metrics =
+                        {
+                            ("Total Companies",        $"{dashboard.Summary.TotalCompanies:N0}"),
+                            ("Active Subscriptions",   $"{dashboard.Summary.ActiveSubscriptions:N0}"),
+                            ("Monthly Recurring Rev.", $"₱{dashboard.Summary.MonthlyRecurringRevenue:N0}"),
+                        }
+                    }
+                }
+            });
+
+            // ---- Section 2: Companies per plan ----
+            var planSection = new ReportSection
+            {
+                Heading = "Companies per Plan",
+                Subtitle = "Distribution of tenants across the subscription tiers",
+            };
+
+            if (dashboard.CompaniesPerPlan.Count == 0)
+            {
+                planSection.Blocks.Add(new ParagraphBlock { Text = "No companies registered." });
+            }
+            else
+            {
+                var planTable = new TableBlock
+                {
+                    Columns = { "Plan", "Companies", "Share" },
+                };
+
+                var totalCompanies = dashboard.CompaniesPerPlan.Sum(p => p.CompanyCount);
+
+                foreach (var p in dashboard.CompaniesPerPlan)
+                {
+                    var pct = totalCompanies > 0
+                        ? ((decimal)p.CompanyCount / totalCompanies) * 100m
+                        : 0m;
+
+                    planTable.Rows.Add(new[]
+                    {
+                        p.PlanName,
+                        p.CompanyCount.ToString("N0"),
+                        $"{pct:0}%",
+                    });
+                }
+
+                planSection.Blocks.Add(planTable);
+            }
+
+            doc.Sections.Add(planSection);
+
+            // ---- Section 3: Recent subscriptions ----
+            var recentSection = new ReportSection
+            {
+                Heading = "Recent Subscriptions",
+                Subtitle = dashboard.RecentSubscriptions.Count == 0
+                    ? "No subscription activity yet."
+                    : $"Last {dashboard.RecentSubscriptions.Count} subscription assignments",
+            };
+
+            if (dashboard.RecentSubscriptions.Count == 0)
+            {
+                recentSection.Blocks.Add(new ParagraphBlock
+                {
+                    Text = "No subscription history to display.",
+                });
+            }
+            else
+            {
+                var subTable = new TableBlock
+                {
+                    Columns = { "Company", "Plan", "Monthly", "Started", "Agreed by" },
+                };
+
+                foreach (var s in dashboard.RecentSubscriptions)
+                {
+                    subTable.Rows.Add(new[]
+                    {
+                        s.CompanyName,
+                        s.PlanName,
+                        s.PlanMonthlyPrice > 0 ? $"₱{s.PlanMonthlyPrice:N0}" : "—",
+                        s.StartedAt.ToLocalTime().ToString("MMM d, yyyy HH:mm"),
+                        string.IsNullOrWhiteSpace(s.TermsAcceptedBy) ? "—" : s.TermsAcceptedBy,
+                    });
+                }
+
+                recentSection.Blocks.Add(subTable);
+            }
+
+            doc.Sections.Add(recentSection);
+
+            return doc;
+        }
+
         // ---- Manager sections ----
 
         private static ReportSection BuildKpiSection(PosDiagnosticsDto pos, FeedbackRatingDistributionDto csat)

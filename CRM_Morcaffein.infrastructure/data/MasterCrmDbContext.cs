@@ -101,6 +101,9 @@ namespace CRM_Morcaffein.infrastructure.data
 
                   .OnDelete(DeleteBehavior.Restrict);
 
+                entity.Property(cd => cd.CloudServerName).HasMaxLength(200);
+                entity.Property(cd => cd.CloudDatabaseName).HasMaxLength(200);
+
             });
 
             builder.Entity<Device>(entity =>

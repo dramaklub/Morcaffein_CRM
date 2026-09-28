@@ -22,6 +22,12 @@ namespace CRM_Morcaffein.winforms.Views
         private const string IconsFolder = "Resources/Icons";
         private const string BrandingFolder = "Resources/Branding";
 
+        // ---- Sync indicator state ----
+        private SyncIndicatorControl _syncIndicator = null!;
+        private System.Windows.Forms.Timer _syncPollTimer = null!;
+        private readonly CRM_Morcaffein.winforms.Services.Api.SyncApi _syncApi = new();
+        private string? _lastSyncError;
+
         public FrmMain()
         {
             InitializeComponent();
@@ -36,6 +42,43 @@ namespace CRM_Morcaffein.winforms.Views
 
             BuildNavButtons(employee.Role);
 
+            // Sync indicator — a small colored dot inside the branch selector
+            // panel, to the left of the "Branch:" label. It lives with the
+            // branch selector because both are topbar "status" surfaces.
+            //
+            // If the branch selector is hidden (pinned user, no Branching
+            // module), the indicator stays visible and just sits at the far
+            // right of the topbar. That's intentional: sync state should
+            // always be visible regardless of branch UI state.
+            // Shift the branch label and combo right by 24px to make room for
+            // the dot, so "Branch:" doesn't sit under the indicator.
+            branchSelectorLabel.Location = new Point(24, 22);
+            branchSelectorCombo.Location = new Point(80, 18);
+
+            _syncIndicator = new SyncIndicatorControl
+            {
+                Location = new Point(2, 24),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
+            };
+            branchSelectorPanel.Controls.Add(_syncIndicator);
+            _syncIndicator.BringToFront();
+
+            // When the parent panel is hidden (Barista, Basic tier), reattach
+            // the indicator to the topbar itself so it stays visible. Without
+            // this, hiding the branch selector would also hide the sync dot.
+            branchSelectorPanel.VisibleChanged += (s, e) =>
+            {
+                if (!branchSelectorPanel.Visible && _syncIndicator.Parent != topBarPanel)
+                {
+                    branchSelectorPanel.Controls.Remove(_syncIndicator);
+                    topBarPanel.Controls.Add(_syncIndicator);
+                    _syncIndicator.Location = new Point(
+                        topBarPanel.ClientSize.Width - 32, 22);
+                    _syncIndicator.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                    _syncIndicator.BringToFront();
+                }
+            };
+
             logoutBtn.Click += LogoutBtn_Click;
         }
 
@@ -43,10 +86,76 @@ namespace CRM_Morcaffein.winforms.Views
         {
             await LoadBranchesAsync();
 
+            StartSyncPolling();
+
             if (sidebarPanel.Controls.OfType<Button>().Any())
             {
                 var firstNav = sidebarPanel.Controls.OfType<Button>().First();
                 firstNav.PerformClick();
+            }
+        }
+
+        private void StartSyncPolling()
+        {
+            _syncPollTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+            _syncPollTimer.Tick += async (s, e) => await PollSyncStatusAsync();
+            _syncPollTimer.Start();
+
+            // Immediate first poll so the indicator isn't gray for 5 seconds.
+            _ = PollSyncStatusAsync();
+        }
+
+        private async Task PollSyncStatusAsync()
+        {
+            if (EmployeeSession.Current is null) return;
+            if (_syncIndicator is null) return;
+
+            var status = await _syncApi.GetStatusAsync();
+
+            if (status is null)
+            {
+                _syncIndicator.SetState(
+                    SyncIndicatorControl.SyncState.Unknown,
+                    "Sync status unavailable. Retrying...");
+                return;
+            }
+
+            SyncIndicatorControl.SyncState state;
+            string tooltip;
+
+            if (!status.IsOnline || !string.IsNullOrEmpty(status.LastError))
+            {
+                state = SyncIndicatorControl.SyncState.Failed;
+                tooltip = $"Sync failed: {status.LastError ?? "unknown error"}";
+            }
+            else if (status.PendingCount > 0)
+            {
+                state = SyncIndicatorControl.SyncState.Pending;
+                tooltip = $"{status.PendingCount} row(s) pending sync.";
+            }
+            else
+            {
+                state = SyncIndicatorControl.SyncState.Online;
+                var last = status.LastSyncedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "never";
+                tooltip = $"Synced. Last: {last}" +
+                          (string.IsNullOrEmpty(status.CloudHost) ? "" : $"\nCloud: {status.CloudHost}");
+            }
+
+            _syncIndicator.SetState(state, tooltip);
+
+            // Toast on transition — fire once per state change, not every poll.
+            if (status.LastError != _lastSyncError)
+            {
+                if (!string.IsNullOrEmpty(status.LastError))
+                {
+                    Toast.Show(this, $"Sync failed: {status.LastError}", ToastKind.Error);
+                }
+                else if (_lastSyncError is not null)
+                {
+                    Toast.Show(this, "Sync restored.", ToastKind.Success);
+                }
+
+                _lastSyncError = status.LastError;
             }
         }
 
@@ -139,6 +248,9 @@ namespace CRM_Morcaffein.winforms.Views
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            _syncPollTimer?.Stop();
+            _syncPollTimer?.Dispose();
+
             base.OnFormClosing(e);
 
             if (e.CloseReason == CloseReason.UserClosing && !ClosedViaLogout)

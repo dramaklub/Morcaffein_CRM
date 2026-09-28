@@ -21,6 +21,7 @@ public class TermsAndConditions
     /// <summary>The plan these terms belong to. Null = general/platform-level.</summary>
     public int? PlanId { get; set; }
     public Plan? Plan { get; set; }
+    public bool IsSynced { get; set; } = false;
 
     public string Title { get; set; } = string.Empty;
 

@@ -46,6 +46,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
@@ -97,6 +100,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<int>("MadeBy")
@@ -187,6 +193,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
@@ -226,6 +235,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsLocked")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<DateTime?>("LastLoginDate")
@@ -279,6 +291,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -324,6 +339,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<string>("LastName")
@@ -383,6 +401,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<int>("LoggedBy")
@@ -447,6 +468,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("datetime2");
 
@@ -500,6 +524,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<int>("OrderId")
                         .HasColumnType("int");
 
@@ -535,6 +562,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OrderItemModifierId"));
+
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
 
                     b.Property<int>("OrderItemId")
                         .HasColumnType("int");
@@ -587,6 +617,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<int>("PointsChange")
                         .HasColumnType("int");
 
@@ -635,6 +668,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("int");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<int?>("OrderId")
@@ -698,6 +734,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsAvailable")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<string>("LocalImagePath")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -746,6 +785,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSynced")
+                        .HasColumnType("bit");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -775,6 +817,9 @@ namespace CRM_Morcaffein.infrastructure.Migrations.TenantCrmDb
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSynced")
                         .HasColumnType("bit");
 
                     b.Property<decimal>("Price")

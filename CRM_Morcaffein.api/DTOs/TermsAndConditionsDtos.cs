@@ -32,3 +32,14 @@ public class TermsDetailDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+/// <summary>
+/// Request for PUT /api/superadmin/terms/{id}. Only the body is editable —
+/// the title, plan binding, and effective date are set at provisioning time.
+/// Version is auto-bumped on every save (1.1 → 1.2 → 1.3, etc.) so a tenant's
+/// "agreed at" timestamp always points to a specific immutable revision.
+/// </summary>
+public class UpdateTermsRequest
+{
+    public string Body { get; set; } = string.Empty;
+}

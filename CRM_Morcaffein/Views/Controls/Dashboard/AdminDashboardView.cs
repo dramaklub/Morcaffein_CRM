@@ -311,6 +311,24 @@ namespace CRM_Morcaffein.winforms.Views.Controls
             return row;
         }
 
+        /// <summary>
+        /// Translates the date filter's selected preset into a whole-day count
+        /// the API endpoints understand. Custom computes the actual span rather
+        /// than falling through to the "30" default.
+        /// </summary>
+        private int GetEffectiveDays()
+        {
+            return _dateFilter.SelectedPreset switch
+            {
+                DateRangePreset.Today => 1,
+                DateRangePreset.SevenDays => 7,
+                DateRangePreset.OneMonth => 30,
+                DateRangePreset.Custom => Math.Max(1,
+                    (_dateFilter.EndDate.Date - _dateFilter.StartDate.Date).Days + 1),
+                _ => 30,
+            };
+        }
+
         private void SyncWidth()
         {
             if (_contentHost == null || _bentoContainer == null) return;
@@ -327,13 +345,7 @@ namespace CRM_Morcaffein.winforms.Views.Controls
         {
             try
             {
-                var days = _dateFilter.SelectedPreset switch
-                {
-                    DateRangePreset.Today => 1,
-                    DateRangePreset.SevenDays => 7,
-                    _ => 30,
-                };
-
+                var days = GetEffectiveDays();
                 var branchId = EmployeeSession.Current?.CurrentBranchId;
                 var hasBI = EmployeeSession.Current?.HasModule("BusinessIntelligence") == true;
 
@@ -396,12 +408,10 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
         private async void ExportBtn_Click(object? sender, EventArgs e)
         {
-            var days = _dateFilter.SelectedPreset switch
-            {
-                DateRangePreset.Today => 1,
-                DateRangePreset.SevenDays => 7,
-                _ => 30,
-            };
+            var days = GetEffectiveDays();
+            var branchId = EmployeeSession.Current?.CurrentBranchId;
+
+            // Step 1 — ask which report.
 
             // Step 1 — ask which report.
             using var picker = new ExportReportTypeModal(
@@ -435,8 +445,8 @@ namespace CRM_Morcaffein.winforms.Views.Controls
 
                 var report = new ReportService();
                 var bytes = isLedger
-                    ? await report.GenerateTransactionLedgerAsync(days)
-                    : await report.GenerateAdminReportAsync(days);
+                    ? await report.GenerateTransactionLedgerAsync(days, branchId)
+                    : await report.GenerateAdminReportAsync(days, branchId);
 
                 await File.WriteAllBytesAsync(dlg.FileName, bytes);
 

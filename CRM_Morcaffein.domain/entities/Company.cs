@@ -10,6 +10,7 @@ namespace CRM_Morcaffein.domain.entities
         public string CompanyCode { get; set; } = string.Empty;
         public string CompanyName { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
+        public bool IsSynced { get; set; } = false;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public int? CurrentPlanId { get; set; }
         public Plan? CurrentPlan { get; set; }
