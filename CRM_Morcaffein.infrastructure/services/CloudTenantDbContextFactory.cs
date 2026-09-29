@@ -84,8 +84,18 @@ namespace CRM_Morcaffein.infrastructure.services
                 $"Connection Lifetime=300;";
 
             var options = new DbContextOptionsBuilder<TenantCrmDbContext>()
-                .UseSqlServer(connectionString)
-                .Options;
+            .UseSqlServer(connectionString, sql =>
+            {
+                // Retry transient failures (network blips, brief cloud outages)
+                // automatically before surfacing an exception. This makes the
+                // worker's tick resilient to a few seconds of dropped connectivity
+                // without bouncing the exception up to the catch block.
+                sql.EnableRetryOnFailure(
+                    maxRetryCount: 3,
+                    maxRetryDelay: TimeSpan.FromSeconds(5),
+                    errorNumbersToAdd: null);
+            })
+            .Options;
 
             _optionsCache[companyId] = options;
             return options;

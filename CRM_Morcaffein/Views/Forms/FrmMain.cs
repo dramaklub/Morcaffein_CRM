@@ -128,6 +128,13 @@ namespace CRM_Morcaffein.winforms.Views
                 state = SyncIndicatorControl.SyncState.Failed;
                 tooltip = $"Sync failed: {status.LastError ?? "unknown error"}";
             }
+            else if (status.LastSyncedAt is null)
+            {
+                // Never synced successfully since the API booted. We don't actually
+                // know if cloud is reachable — gray is honest, green would be a lie.
+                state = SyncIndicatorControl.SyncState.Unknown;
+                tooltip = "No sync has run yet since the API started.";
+            }
             else if (status.PendingCount > 0)
             {
                 state = SyncIndicatorControl.SyncState.Pending;

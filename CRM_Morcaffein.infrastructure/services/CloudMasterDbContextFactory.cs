@@ -38,7 +38,16 @@ namespace CRM_Morcaffein.infrastructure.services
             }
 
             return new DbContextOptionsBuilder<MasterCrmDbContext>()
-                .UseSqlServer(connectionString)
+                .UseSqlServer(connectionString, sql =>
+                {
+                    // Retry transient failures (network blips, brief cloud outages)
+                    // automatically before surfacing an exception. Matches the
+                    // treatment on CloudTenantDbContextFactory.
+                    sql.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorNumbersToAdd: null);
+                })
                 .Options;
         }
     }
