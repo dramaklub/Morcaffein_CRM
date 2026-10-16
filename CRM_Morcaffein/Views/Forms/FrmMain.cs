@@ -343,7 +343,15 @@ namespace CRM_Morcaffein.winforms.Views
                 // Branch management — gated by the Branching module. Only
                 // Full-tier tenants have it. Placed before Manage Users so
                 // the two "organizational setup" surfaces sit together.
+                // Branch management — gated by the Branching module. Only
+                // Full-tier tenants have it. Placed before Manage Users so
+                // the two "organizational setup" surfaces sit together.
                 AddIfEntitled("Branches", "Customers", "Branching", () => new BranchManagementView());
+
+                // Tenant-facing T&C view. Every Admin sees this regardless of
+                // tier — it's the terms they agreed to when they subscribed.
+                // Server enforces Admin-only via a role check in MeController.
+                AddAlways("Terms", "Customers", () => new TenantTermsView());
 
                 AddAlways("Manage Users", "User Mgmt", () => new ManageUsersView());
             }

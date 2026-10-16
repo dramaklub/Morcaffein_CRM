@@ -268,5 +268,48 @@ namespace CRM_Morcaffein.api.Controllers
             await DatabaseSeeder.SeedAsync(tenant, customers, orders, companyId: companyId);
             return Ok(new { message = "Seeded.", companyId, customers, orders });
         }
+
+        // POST api/tenant/{companyId}/dev/seed-transactions
+        //
+        // Re-seeds ONLY transactional data (orders, campaigns, feedback,
+        // point ledger, adjustments). Keeps existing Customers, Employees,
+        // Branches, and product catalog.
+        //
+        // Wipes the transactional tables first by default (wipe=true),
+        // producing a fresh, deterministic demo state. Pass wipe=false
+        // to append instead.
+        //
+        // Every generated row has IsSynced = false — the sync worker
+        // pushes them to cloud on its next tick.
+        [HttpPost("seed-transactions")]
+        public async Task<ActionResult> SeedTransactions(
+            int companyId,
+            [FromQuery] int orders = 200,
+            [FromQuery] int feedback = 30,
+            [FromQuery] int campaigns = 15,
+            [FromQuery] int daysBack = 90,
+            [FromQuery] bool wipe = true)
+        {
+            await using var tenant = await _tenantFactory.CreateAsync(companyId);
+            await DatabaseSeeder.SeedTransactionsAsync(
+                tenant,
+                ordersToCreate: orders,
+                feedbackToCreate: feedback,
+                campaignsToCreate: campaigns,
+                daysBack: daysBack,
+                wipe: wipe,
+                companyId: companyId);
+
+            return Ok(new
+            {
+                message = "Transactions seeded.",
+                companyId,
+                orders,
+                feedback,
+                campaigns,
+                daysBack,
+                wipe,
+            });
+        }
     }
 }

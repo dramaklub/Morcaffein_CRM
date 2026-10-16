@@ -11,16 +11,17 @@ namespace CRM_Morcaffein.winforms.Services.Reports
             int days,
             PosDiagnosticsDto pos,
             PeakHoursDto peak,
-            AgeDemographicsAovDto age,
-            TopProductsResponseDto topProducts,
-            ActiveCampaignLiftDto lift,
+            AgeDemographicsAovDto? age,
+            TopProductsResponseDto? topProducts,
+            ActiveCampaignLiftDto? lift,
             FeedbackRatingDistributionDto csat,
-            LoyaltyTierProgressionDto tier)
+            LoyaltyTierProgressionDto? tier,
+            bool hasBI)
         {
             var doc = new ReportDocument
             {
                 Title = "Morcaffein — Operations Report",
-                Subtitle = "Store Manager summary",
+                Subtitle = hasBI ? "Store Manager summary" : "Store Manager summary (Basic tier)",
                 PeriodLabel = PeriodLabelFor(days),
                 GeneratedBy = Session.EmployeeSession.Current?.DisplayName ?? "—",
                 GeneratedAt = DateTime.Now,
@@ -28,19 +29,27 @@ namespace CRM_Morcaffein.winforms.Services.Reports
 
             doc.Sections.Add(BuildKpiSection(pos, csat));
             doc.Sections.Add(BuildPeakHoursSection(peak));
-            doc.Sections.Add(BuildAgeDemographicsSection(age));
-            doc.Sections.Add(BuildTopProductsSection(topProducts));
-            doc.Sections.Add(BuildCampaignLiftSection(lift));
+
+            // BI sections — only present for tenants with the BusinessIntelligence module.
+            if (hasBI && age is not null)
+                doc.Sections.Add(BuildAgeDemographicsSection(age));
+
+            if (hasBI && topProducts is not null)
+                doc.Sections.Add(BuildTopProductsSection(topProducts));
+
+            if (hasBI && lift is not null)
+                doc.Sections.Add(BuildCampaignLiftSection(lift));
+
+            // Ratings section stays for all tiers — it backs the Feedback KPI pod on Basic.
             doc.Sections.Add(BuildRatingsSection(csat));
 
-            // Member Growth by Tier goes last — the report's operational content
-            // comes first, this trend sits at the bottom as a reference.
-            doc.Sections.Add(BuildLoyaltyTierSection(tier));
+            if (hasBI && tier is not null)
+                doc.Sections.Add(BuildLoyaltyTierSection(tier));
 
             return doc;
         }
 
-                /// <summary>
+        /// <summary>
         /// The raw transactions ledger — one row per completed order, plus a
         /// summary footer. Both roles can generate this report; it's the raw data
         /// underneath every other report.
@@ -124,47 +133,132 @@ namespace CRM_Morcaffein.winforms.Services.Reports
         }
 
         public static ReportDocument BuildAdmin(
-            int days,
-            PosDiagnosticsDto pos,
-            CustomerLtvChurnDto ltv,
-            RevenueVsDiscountsDto revDisc,
-            NewVsReturningDto newRet,
-            PeakHoursDto peak,
-            AuditLogSummaryDto audit)
+    int days,
+    PosDiagnosticsDto pos,
+    CustomerLtvChurnDto? ltv,
+    RevenueVsDiscountsDto? revDisc,
+    NewVsReturningDto? newRet,
+    PeakHoursDto peak,
+    AuditLogSummaryDto? audit,
+    bool hasBI,
+    RecentEmployeesDto? recentEmployees,
+    RecentFeedbackDto? recentFeedback)
         {
             var doc = new ReportDocument
             {
                 Title = "Morcaffein — Business Report",
-                Subtitle = "Branch Admin summary",
+                Subtitle = hasBI ? "Branch Admin summary" : "Branch Admin summary (Basic tier)",
                 PeriodLabel = PeriodLabelFor(days),
                 GeneratedBy = Session.EmployeeSession.Current?.DisplayName ?? "—",
                 GeneratedAt = DateTime.Now,
             };
 
+            // KPI strip. Basic tier has no Pending Approvals pod — swap for Active Employees.
+            var kpiMetrics = new List<(string, string)>
+            {
+                ("Total Revenue", $"₱{pos.NetSales:N0}"),
+            };
+
+            if (hasBI && ltv is not null)
+                kpiMetrics.Add(("Member Lifetime Value", $"₱{ltv.OverallAverageLtv:N0}"));
+
+            if (hasBI && audit is not null)
+                kpiMetrics.Add(("Pending Approvals", $"{audit.PendingCampaignApprovals:N0}"));
+
+            // Basic-tier Admin's KPI strip includes Active Employees — matches
+            // the Basic Admin dashboard's second KPI pod.
+            if (!hasBI && audit is not null)
+                kpiMetrics.Add(("Active Employees", $"{audit.ActiveEmployeeCount:N0}"));
+
             doc.Sections.Add(new ReportSection
             {
                 Heading = "Key Metrics",
-                Blocks =
-                {
-                    new MetricStripBlock
-                    {
-                        Metrics =
-                        {
-                            ("Total Revenue",         $"₱{pos.NetSales:N0}"),
-                            ("Member Lifetime Value", $"₱{ltv.OverallAverageLtv:N0}"),
-                            ("Pending Approvals",     $"{audit.PendingCampaignApprovals:N0}"),
-                        }
-                    }
-                }
+                Blocks = { new MetricStripBlock { Metrics = kpiMetrics } }
             });
 
-            doc.Sections.Add(BuildRevenueVsDiscountsSection(revDisc));
-            doc.Sections.Add(BuildLtvChurnSection(ltv));
-            doc.Sections.Add(BuildNewVsReturningSection(newRet));
+            // BI sections — only for BusinessIntelligence tenants.
+            if (hasBI && revDisc is not null)
+                doc.Sections.Add(BuildRevenueVsDiscountsSection(revDisc));
+
+            if (hasBI && ltv is not null)
+                doc.Sections.Add(BuildLtvChurnSection(ltv));
+
+            if (hasBI && newRet is not null)
+                doc.Sections.Add(BuildNewVsReturningSection(newRet));
+
             doc.Sections.Add(BuildPeakHoursSection(peak));
-            doc.Sections.Add(BuildAuditSection(audit));
+
+            if (hasBI && audit is not null)
+                doc.Sections.Add(BuildAuditSection(audit));
+
+            // Basic-tier: recent employees + recent feedback instead of BI charts.
+            if (!hasBI && recentEmployees is not null)
+                doc.Sections.Add(BuildRecentEmployeesSection(recentEmployees));
+
+            if (!hasBI && recentFeedback is not null)
+                doc.Sections.Add(BuildRecentFeedbackSection(recentFeedback));
 
             return doc;
+        }
+
+        private static ReportSection BuildRecentEmployeesSection(RecentEmployeesDto recent)
+        {
+            var section = new ReportSection
+            {
+                Heading = "Recent Employees",
+                Subtitle = "Newest additions to the team",
+            };
+
+            if (recent.Employees.Count == 0)
+            {
+                section.Blocks.Add(new ParagraphBlock { Text = "No employees yet." });
+                return section;
+            }
+
+            var table = new TableBlock { Columns = { "Name", "Role", "Branch" } };
+            foreach (var e in recent.Employees)
+            {
+                table.Rows.Add(new[]
+                {
+                    e.FullName,
+                    e.Role,
+                    string.IsNullOrWhiteSpace(e.BranchName) ? "—" : e.BranchName,
+                });
+            }
+
+            section.Blocks.Add(table);
+            return section;
+        }
+
+        private static ReportSection BuildRecentFeedbackSection(RecentFeedbackDto recent)
+        {
+            var section = new ReportSection
+            {
+                Heading = "Recent Feedback",
+                Subtitle = "Latest customer reviews",
+            };
+
+            if (recent.Feedbacks.Count == 0)
+            {
+                section.Blocks.Add(new ParagraphBlock { Text = "No feedback yet." });
+                return section;
+            }
+
+            var table = new TableBlock { Columns = { "Customer", "Rating", "Category", "Status", "Date" } };
+            foreach (var f in recent.Feedbacks)
+            {
+                table.Rows.Add(new[]
+                {
+                    f.CustomerName,
+                    $"{f.Rating} / 5",
+                    f.Category,
+                    f.Status,
+                    f.DateLogged.ToLocalTime().ToString("MMM d"),
+                });
+            }
+
+            section.Blocks.Add(table);
+            return section;
         }
 
         /// <summary>

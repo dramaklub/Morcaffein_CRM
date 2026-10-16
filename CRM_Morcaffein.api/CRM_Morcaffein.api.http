@@ -1,22 +1,41 @@
-### SuperAdmin login
-# @name saLogin
-POST http://localhost:5035/api/superadmin/auth/login
+### Tenant C Manager login (Basic tier)
+# @name tenantCLogin
+POST http://localhost:5035/api/auth/login
 Content-Type: application/json
 
 {
-  "username": "superadmin",
+  "username": "trent.windler",
   "password": "password123"
 }
 
-### Get T&C #1
-GET http://localhost:5035/api/superadmin/terms/1
-Authorization: Bearer {{saLogin.response.body.$.token}}
-
-### Update T&C #1
-PUT http://localhost:5035/api/superadmin/terms/1
-Authorization: Bearer {{saLogin.response.body.$.token}}
+### Tenant A Manager login (Full tier)
+# @name tenantALogin
+POST http://localhost:5035/api/auth/login
 Content-Type: application/json
 
 {
-  "body": "PLACEHOLDER — testing the PUT endpoint.\n\nReal text will be restored before the demo."
-}   
+  "username": "jason.kub",
+  "password": "pass"
+}
+
+### Same BI endpoints — should be 200 for Full tier
+GET http://localhost:5035/api/tenant/1/dashboard/customer-ltv-churn?days=30
+Authorization: Bearer {{tenantALogin.response.body.$.token}}
+
+###
+GET http://localhost:5035/api/tenant/1/dashboard/revenue-vs-discounts?days=90
+Authorization: Bearer {{tenantALogin.response.body.$.token}}
+###
+
+# @name tenantALogin
+###
+POST http://localhost:5035/api/tenant/1/dev/seed-transactions?orders=200&feedback=30&campaigns=15
+Authorization: Bearer {{adminLogin.response.body.$.token}}
+
+### Tenant B
+POST http://localhost:5035/api/tenant/2/dev/seed-transactions?orders=200&feedback=30&campaigns=15
+Authorization: Bearer {{adminLogin.response.body.$.token}}
+
+### Tenant C
+POST http://localhost:5035/api/tenant/3/dev/seed-transactions?orders=200&feedback=30&campaigns=15
+Authorization: Bearer {{adminLogin.response.body.$.token}}

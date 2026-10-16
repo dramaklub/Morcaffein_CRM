@@ -25,6 +25,16 @@ namespace CRM_Morcaffein.winforms.Services.Api
             return result ?? new EntitlementsResponseDto();
         }
 
+        // GET api/tenant/{companyId}/me/terms
+        public async Task<TenantTermsDto> GetTermsAsync()
+        {
+            var response = await _http.GetAsync(
+                $"api/tenant/{ApiConfig.CompanyId}/me/terms");
+            await EnsureSuccess(response);
+            var result = await response.Content.ReadFromJsonAsync<TenantTermsDto>();
+            return result ?? new TenantTermsDto { HasTerms = false };
+        }
+
         private static async Task EnsureSuccess(HttpResponseMessage response)
         {
             if (response.IsSuccessStatusCode) return;

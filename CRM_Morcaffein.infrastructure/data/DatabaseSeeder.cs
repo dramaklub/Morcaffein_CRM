@@ -614,6 +614,438 @@ namespace CRM_Morcaffein.infrastructure.Data
         }
 
         /// <summary>
+        /// Re-seeds ONLY the transactional data for a tenant — orders,
+        /// campaigns, feedback, point ledger, adjustments. Keeps existing
+        /// Customers, Employees, Credentials, Branches, and the product
+        /// catalog intact.
+        ///
+        /// Wipes the transactional tables first (default) so re-running
+        /// produces a deterministic, fresh demo state. This is destructive
+        /// on transactional data — do not call against production.
+        ///
+        /// Every generated row has IsSynced = false by default, so the
+        /// sync worker pushes them all to cloud on its next tick.
+        /// </summary>
+        public static async Task SeedTransactionsAsync(
+            TenantCrmDbContext ctx,
+            int ordersToCreate = 200,
+            int feedbackToCreate = 30,
+            int campaignsToCreate = 15,
+            int daysBack = 90,
+            bool wipe = true,
+            int companyId = 1)
+        {
+            Randomizer.Seed = new Random(20260921 + companyId + 1);
+            var rnd = new Bogus.Randomizer();
+
+            // ---------- 0. Wipe transactional tables ----------
+            if (wipe)
+            {
+                // FK-safe delete order.
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM OrderItemModifiers;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM CampaignRedeems;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM PointLedgers;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM PointAdjustmentRequests;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM Feedbacks;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM OrderItems;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM Orders;");
+                await ctx.Database.ExecuteSqlRawAsync("DELETE FROM Campaigns;");
+            }
+
+            // ---------- 1. Resolve existing reference data ----------
+
+            var branches = await ctx.Branches.AsNoTracking().ToListAsync();
+            if (branches.Count == 0)
+                throw new InvalidOperationException(
+                    "SeedTransactionsAsync requires existing Branches. Run the full seeder first.");
+
+            var branchIds = branches.Select(b => b.BranchId).ToList();
+
+            var customers = await ctx.Customers.AsNoTracking().ToListAsync();
+            if (customers.Count == 0)
+                throw new InvalidOperationException(
+                    "SeedTransactionsAsync requires existing Customers. Run the full seeder first.");
+
+            var customerIds = customers.Select(c => c.CustomerId).ToList();
+
+            var employees = await ctx.Employees.AsNoTracking().ToListAsync();
+
+            var baristaIds = employees
+                .Where(e => e.Role.Equals("Barista", StringComparison.OrdinalIgnoreCase))
+                .Select(e => e.EmployeeId)
+                .ToList();
+
+            if (baristaIds.Count == 0)
+                throw new InvalidOperationException(
+                    "SeedTransactionsAsync requires at least one Barista. Run the full seeder first.");
+
+            var managerId = employees
+                .FirstOrDefault(e => e.Role.Equals("Manager", StringComparison.OrdinalIgnoreCase))?.EmployeeId
+                ?? baristaIds[0];
+
+            var adminId = employees
+                .FirstOrDefault(e => e.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase))?.EmployeeId
+                ?? managerId;
+
+            var products = await ctx.Products.AsNoTracking().ToListAsync();
+            var sizes = await ctx.ProductSizes.AsNoTracking().ToListAsync();
+            var modifiers = await ctx.ProductModifiers.AsNoTracking().ToListAsync();
+
+            if (products.Count == 0 || sizes.Count == 0)
+                throw new InvalidOperationException(
+                    "SeedTransactionsAsync requires existing Products and ProductSizes. Run the full seeder first.");
+
+            // ---------- 2. Campaigns ----------
+
+            var campaignFaker = new Faker<Campaign>()
+                .RuleFor(c => c.PromoName, f => f.PickRandom(
+                    "Weekend Matcha Blowout", "Cold Brew Days", "Loyalty Double Points",
+                    "Birthday Treat", "We Miss You", "Grand Opening Special",
+                    "Student Discount", "Flash Friday", "Iced Coffee Week",
+                    "Matcha Madness", "Espresso Happy Hour", "Ube Season"))
+                .RuleFor(c => c.PromoCategory, f => f.PickRandom("Seasonal", "Loyalty", "Birthday", "Inactive"))
+                .RuleFor(c => c.Reason, f => f.PickRandom(
+                    "Weekend volume push", "Slow Tuesday traffic boost",
+                    "Clear remaining matcha stock before new shipment",
+                    "Reward loyal customers after positive feedback",
+                    "Q3 revenue target shortfall", "Test new pricing strategy",
+                    "Respond to competitor opening nearby",
+                    "Holiday season customer appreciation",
+                    "Push underperforming product line",
+                    "Increase average order value through bundling"))
+                .RuleFor(c => c.Description, f => f.PickRandom(
+                    "Come by this weekend and enjoy a special treat on us — show this message at the counter.",
+                    "We've got something for you. Drop in any day this week and mention this offer.",
+                    "A little thank-you from us to you. Visit anytime before the offer ends.",
+                    "Missing your usual? We saved a special deal just for you.",
+                    "It's a good week to treat yourself. Come see what's brewing.",
+                    "Something new is on the menu — come try it with a little extra off.",
+                    "A warm cup is waiting. Drop by and let us know you got this message.",
+                    "Thanks for being part of Morcaffein. Here's a small token of appreciation.",
+                    "We've been thinking about you. Come in for a surprise deal.",
+                    "Your next visit just got a little sweeter. Mention this offer at the counter."))
+                .RuleFor(c => c.DiscountType, f => f.PickRandom("Percentage", "FixedAmount"))
+                .RuleFor(c => c.DiscountValue, (f, c) =>
+                    c.DiscountType == "Percentage" ? f.Random.Number(5, 25) : f.Random.Number(20, 100))
+                .RuleFor(c => c.TargetTier, f => f.PickRandom("All", "Regular", "Silver", "Gold"))
+                .RuleFor(c => c.MinPurchaseAmount, f => f.Random.Bool(0.4f) ? f.Random.Number(100, 300) : null)
+                .RuleFor(c => c.MaxDiscountAmount, f => f.Random.Bool(0.4f) ? f.Random.Number(50, 200) : null)
+                .RuleFor(c => c.MaxRedemptionsPerCustomer, f => f.Random.Number(1, 3))
+                .RuleFor(c => c.MadeBy, () => managerId)
+                .RuleFor(c => c.StartDate, f => f.Date.Recent(daysBack))
+                .RuleFor(c => c.EndDate, (f, c) => c.StartDate.AddDays(f.Random.Number(7, 30)))
+                .RuleFor(c => c.CreatedAt, f => f.Date.Recent(daysBack + 5))
+                .RuleFor(c => c.UpdatedAt, () => DateTime.UtcNow);
+
+            var campaigns = campaignFaker.Generate(campaignsToCreate);
+
+            // Status distribution: mostly Active, some Pending/Rejected/Inactive.
+            for (int i = 0; i < campaigns.Count; i++)
+            {
+                var c = campaigns[i];
+                if (i < campaigns.Count * 0.5)
+                {
+                    c.Status = "Active";
+                    c.IsActive = true;
+                }
+                else if (i < campaigns.Count * 0.75)
+                {
+                    c.Status = "Pending";
+                    c.IsActive = false;
+                }
+                else if (i < campaigns.Count * 0.9)
+                {
+                    c.Status = "Rejected";
+                    c.IsActive = false;
+                    c.DecidedBy = adminId;
+                    c.DecidedAt = c.CreatedAt.AddDays(1);
+                    c.DecisionNotes = "Budget constraints this quarter.";
+                }
+                else
+                {
+                    c.Status = "Inactive";
+                    c.IsActive = false;
+                }
+
+                // 30% company-wide.
+                c.BranchId = rnd.Bool(0.30f) ? null : rnd.ArrayElement(branchIds.ToArray());
+            }
+
+            ctx.Campaigns.AddRange(campaigns);
+            await ctx.SaveChangesAsync();
+
+            var activeCampaigns = campaigns.Where(c => c.Status == "Active").ToList();
+
+            // ---------- 3. Orders + OrderItems + modifiers + redeems + ledger ----------
+
+            var orders = new List<Order>();
+            var redeems = new List<CampaignRedeem>();
+            var redeemOwners = new List<Order>();
+            var ledgerEntries = new List<PointLedger>();
+
+            for (int i = 0; i < ordersToCreate; i++)
+            {
+                var daysAgo = GetWeightedDaysAgo(rnd, daysBack);
+                var localHour = BogusHours(rnd);
+                var phNow = DateTime.UtcNow.AddHours(8);
+                var localDate = phNow.Date.AddDays(-daysAgo)
+                    .AddHours(localHour)
+                    .AddMinutes(rnd.Number(0, 59));
+                var orderDate = localDate.AddHours(-8);
+
+                var customerId = rnd.ArrayElement(customerIds.ToArray());
+                var baristaId = rnd.ArrayElement(baristaIds.ToArray());
+
+                var order = new Order
+                {
+                    CustomerId = customerId,
+                    CreatedBy = baristaId,
+                    OrderDate = orderDate,
+                    Status = "Completed",
+                    IsActive = true,
+                    CreatedAt = orderDate,
+                    UpdatedAt = orderDate,
+                    HasPwdSeniorDiscount = rnd.Bool(0.1f),
+                    BranchId = rnd.ArrayElement(branchIds.ToArray()),
+                };
+
+                var itemCount = rnd.Number(1, 3);
+                decimal subTotal = 0m;
+
+                for (int j = 0; j < itemCount; j++)
+                {
+                    var size = rnd.ArrayElement(sizes.ToArray());
+                    var quantity = rnd.Number(1, 2);
+
+                    var item = new OrderItem
+                    {
+                        ProductId = size.ProductId,
+                        ProductSizeId = size.ProductSizeId,
+                        SizeNameSnapshot = size.SizeName,
+                        BaseSizePrice = size.Price,
+                        Quantity = quantity,
+                    };
+
+                    var modCount = rnd.Number(0, 2);
+                    var usedMods = new HashSet<int>();
+                    decimal modifierTotal = 0m;
+
+                    for (int k = 0; k < modCount; k++)
+                    {
+                        var mod = rnd.ArrayElement(modifiers.ToArray());
+                        if (!usedMods.Add(mod.ProductModifierId)) continue;
+
+                        item.OrderItemModifiers.Add(new OrderItemModifier
+                        {
+                            ProductModifierId = mod.ProductModifierId,
+                            ProductModifierNameSnapshot = mod.Name,
+                            UnitPrice = mod.Price,
+                        });
+                        modifierTotal += mod.Price;
+                    }
+
+                    item.UnitPrice = size.Price + modifierTotal;
+                    item.SubTotal = item.UnitPrice * quantity;
+                    subTotal += item.SubTotal;
+
+                    order.OrderItems.Add(item);
+                }
+
+                order.SubTotal = subTotal;
+
+                Campaign? appliedCampaign = null;
+                decimal promoDiscount = 0m;
+                if (activeCampaigns.Count > 0 && rnd.Bool(0.25f))
+                {
+                    appliedCampaign = rnd.ArrayElement(activeCampaigns.ToArray());
+                    promoDiscount = CalculateDiscount(appliedCampaign, subTotal);
+
+                    redeems.Add(new CampaignRedeem
+                    {
+                        CampaignId = appliedCampaign.CampaignId,
+                        OrderId = 0,
+                        DiscountUsed = promoDiscount,
+                        RedeemDate = orderDate,
+                        IsActive = true,
+                        CreatedAt = orderDate,
+                        UpdatedAt = orderDate,
+                    });
+                    redeemOwners.Add(order);
+                }
+                order.TotalDiscount = promoDiscount;
+
+                var afterPromo = Math.Max(0m, subTotal - promoDiscount);
+                if (order.HasPwdSeniorDiscount)
+                {
+                    var netOfVat = afterPromo / 1.12m;
+                    var pwdDiscount = decimal.Round(netOfVat * 0.20m, 2);
+                    order.PwdSeniorDiscountAmount = pwdDiscount;
+                    order.TotalAmount = decimal.Round(netOfVat - pwdDiscount, 2);
+                }
+                else
+                {
+                    order.PwdSeniorDiscountAmount = 0m;
+                    order.TotalAmount = afterPromo;
+                }
+
+                order.PointsEarned = (int)(order.TotalAmount / 10m);
+                orders.Add(order);
+            }
+
+            ctx.Orders.AddRange(orders);
+            await ctx.SaveChangesAsync();
+
+            for (int i = 0; i < redeems.Count; i++)
+                redeems[i].OrderId = redeemOwners[i].OrderId;
+
+            foreach (var o in orders)
+            {
+                if (o.PointsEarned > 0)
+                {
+                    ledgerEntries.Add(new PointLedger
+                    {
+                        CustomerId = o.CustomerId,
+                        PointsChange = o.PointsEarned,
+                        Type = "Earned",
+                        Reason = $"Order #{o.OrderId} Spend",
+                        OrderId = o.OrderId,
+                        Timestamp = o.OrderDate,
+                        IsActive = true,
+                        CreatedAt = o.OrderDate,
+                        UpdatedAt = o.OrderDate,
+                    });
+                }
+            }
+
+            ctx.CampaignRedeems.AddRange(redeems);
+            await ctx.SaveChangesAsync();
+
+            // ---------- 4. Feedbacks ----------
+
+            var feedbackFaker = new Faker<Feedback>()
+                .RuleFor(f => f.CustomerId, f => f.PickRandom(customerIds))
+                .RuleFor(f => f.LoggedBy, f => f.PickRandom(baristaIds))
+                .RuleFor(f => f.BranchId, f => f.PickRandom(branchIds))
+                .RuleFor(f => f.Rating, f => f.Random.WeightedRandom(new[] { 1, 2, 3, 4, 5 }, new[] { 0.03f, 0.05f, 0.12f, 0.40f, 0.40f }))
+                .RuleFor(f => f.Category, f => f.PickRandom("Service", "Product Quality", "Cleanliness", "Wait Time", "Ambiance"))
+                .RuleFor(f => f.StaffNotes, f => f.Lorem.Sentence(4))
+                .RuleFor(f => f.Status, f => f.PickRandom("Pending", "Resolved", "Cancelled"))
+                .RuleFor(f => f.DateLogged, f => f.Date.Recent(daysBack))
+                .RuleFor(f => f.IsActive, () => true)
+                .RuleFor(f => f.CreatedAt, (f, fb) => fb.DateLogged)
+                .RuleFor(f => f.UpdatedAt, (f, fb) => fb.DateLogged);
+
+            var feedbacks = feedbackFaker.Generate(feedbackToCreate);
+
+            foreach (var fb in feedbacks.Where(f => f.Status == "Resolved"))
+            {
+                fb.DecidedBy = managerId;
+                fb.DecidedAt = fb.DateLogged.AddDays(1);
+                fb.DecisionNotes = rnd.Bool(0.5f) ? "Thanks for the feedback." : null;
+            }
+
+            ctx.Feedbacks.AddRange(feedbacks);
+            await ctx.SaveChangesAsync();
+
+            foreach (var fb in feedbacks.Where(f => f.Status == "Resolved"))
+            {
+                if (!rnd.Bool(0.5f)) continue;
+
+                var bonus = rnd.Number(5, 50);
+
+                ledgerEntries.Add(new PointLedger
+                {
+                    CustomerId = fb.CustomerId,
+                    PointsChange = bonus,
+                    Type = "FeedbackBonus",
+                    Reason = $"Feedback ticket #{fb.TicketId} — {fb.Category}",
+                    PerformedBy = managerId,
+                    Timestamp = fb.DecidedAt ?? fb.DateLogged,
+                    IsActive = true,
+                    CreatedAt = fb.DecidedAt ?? fb.DateLogged,
+                    UpdatedAt = fb.DecidedAt ?? fb.DateLogged,
+                });
+            }
+
+            // ---------- 5. Point adjustments ----------
+
+            var adjustmentFaker = new Faker<PointAdjustmentRequest>()
+                .RuleFor(a => a.CustomerId, f => f.PickRandom(customerIds))
+                .RuleFor(a => a.PointsChange, f => f.Random.Bool(0.6f) ? f.Random.Number(5, 50) : -f.Random.Number(5, 30))
+                .RuleFor(a => a.Reason, f => f.PickRandom(
+                    "Goodwill for long wait", "Correction: missed points on prior order",
+                    "Birthday bonus", "Compensation for wrong order", "Referral bonus"))
+                .RuleFor(a => a.RequestedBy, f => f.PickRandom(baristaIds))
+                .RuleFor(a => a.RequestedAt, f => f.Date.Recent(daysBack))
+                .RuleFor(a => a.Status, f => f.PickRandom("Pending", "Approved", "Rejected"))
+                .RuleFor(a => a.IsActive, () => true)
+                .RuleFor(a => a.CreatedAt, (f, a) => a.RequestedAt)
+                .RuleFor(a => a.UpdatedAt, (f, a) => a.RequestedAt);
+
+            var adjustments = adjustmentFaker.Generate(12);
+
+            foreach (var a in adjustments.Where(a => a.Status != "Pending"))
+            {
+                a.ApprovedBy = managerId;
+                a.DecidedAt = a.RequestedAt.AddHours(rnd.Number(2, 48));
+                if (a.Status == "Rejected")
+                    a.DecisionNotes = "Not justified by policy.";
+            }
+
+            ctx.PointAdjustmentRequests.AddRange(adjustments);
+
+            foreach (var a in adjustments.Where(a => a.Status == "Approved"))
+            {
+                ledgerEntries.Add(new PointLedger
+                {
+                    CustomerId = a.CustomerId,
+                    PointsChange = a.PointsChange,
+                    Type = "Adjustment",
+                    Reason = a.Reason,
+                    PerformedBy = a.ApprovedBy,
+                    Timestamp = a.DecidedAt ?? a.RequestedAt,
+                    IsActive = true,
+                    CreatedAt = a.DecidedAt ?? a.RequestedAt,
+                    UpdatedAt = a.DecidedAt ?? a.RequestedAt,
+                });
+            }
+
+            ctx.PointLedgers.AddRange(ledgerEntries);
+
+            // ---------- 6. Update balances and last visit from ledger ----------
+
+            await ctx.SaveChangesAsync();
+
+            var balanceByCustomer = await ctx.PointLedgers
+                .AsNoTracking()
+                .GroupBy(pl => pl.CustomerId)
+                .Select(g => new { CustomerId = g.Key, Total = g.Sum(x => x.PointsChange) })
+                .ToDictionaryAsync(x => x.CustomerId, x => x.Total);
+
+            var lastVisitByCustomer = await ctx.Orders
+                .AsNoTracking()
+                .GroupBy(o => o.CustomerId)
+                .Select(g => new { CustomerId = g.Key, Latest = g.Max(x => x.OrderDate) })
+                .ToDictionaryAsync(x => x.CustomerId, x => x.Latest);
+
+            var customersToUpdate = await ctx.Customers
+                .Where(c => customerIds.Contains(c.CustomerId))
+                .ToListAsync();
+
+            foreach (var c in customersToUpdate)
+            {
+                if (balanceByCustomer.TryGetValue(c.CustomerId, out var bal))
+                    c.PointsBalance = bal;
+                if (lastVisitByCustomer.TryGetValue(c.CustomerId, out var last))
+                    c.LastVisitDate = last;
+                // Mark the customer as needing sync — their balance and visit date changed.
+                c.IsSynced = false;
+            }
+
+            await ctx.SaveChangesAsync();
+        }
+
+        /// <summary>
         /// Populates the product catalog (products, sizes, modifiers) if the
         /// tenant's database doesn't have any yet. The catalog is identical
         /// across all tenants — a coffee shop's menu doesn't vary by location
@@ -811,6 +1243,8 @@ namespace CRM_Morcaffein.infrastructure.Data
 
             await ctx.SaveChangesAsync();
         }
+
+
 
         // ============================================================
         // Helpers

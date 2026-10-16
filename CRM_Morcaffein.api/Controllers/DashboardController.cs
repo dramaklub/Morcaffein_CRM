@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using CRM_Morcaffein.domain.entities;
+using CRM_Morcaffein.infrastructure.data;
 
 namespace CRM_Morcaffein.api.Controllers
 {
@@ -17,14 +18,18 @@ namespace CRM_Morcaffein.api.Controllers
     public class DashboardController : ControllerBase
     {
         private readonly ITenantDbContextFactory _tenantFactory;
+        private readonly CRM_Morcaffein.infrastructure.data.MasterCrmDbContext _master;
+
+        public DashboardController(
+            ITenantDbContextFactory tenantFactory,
+            CRM_Morcaffein.infrastructure.data.MasterCrmDbContext master)
+        {
+            _tenantFactory = tenantFactory;
+            _master = master;
+        }
 
         private const int GoldThreshold = 500;
         private const int SilverThreshold = 200;
-
-        public DashboardController(ITenantDbContextFactory tenantFactory)
-        {
-            _tenantFactory = tenantFactory;
-        }
 
         // GET api/tenant/{companyId}/dashboard/loyalty-tier-progression?months=6
         [HttpGet("loyalty-tier-progression")]
@@ -34,6 +39,9 @@ namespace CRM_Morcaffein.api.Controllers
         {
             if (months < 1) months = 1;
             if (months > 24) months = 24;
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
@@ -127,7 +135,11 @@ namespace CRM_Morcaffein.api.Controllers
             if (days < 1) days = 1;
             if (days > 365) days = 365;
 
+
             branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
 
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
@@ -225,6 +237,9 @@ namespace CRM_Morcaffein.api.Controllers
             if (days > 90) days = 90;
 
             branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
 
@@ -341,6 +356,9 @@ namespace CRM_Morcaffein.api.Controllers
             if (!CallerIsManagerOrAdmin())
                 return StatusCode(403, new { message = "Only managers and admins can view barista performance." });
 
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
+
             if (days < 1) days = 1;
             if (days > 365) days = 365;
 
@@ -443,6 +461,12 @@ namespace CRM_Morcaffein.api.Controllers
             if (!CallerIsManagerOrAdmin())
                 return StatusCode(403, new { message = "Only managers and admins can view campaign ROI reports." });
 
+            // NOT BI-gated: the "Promos Used" KPI pod on the Basic-tier Manager
+            // dashboard reads from this endpoint for the redemption count. The
+            // Basic tier has the Transactions module and campaigns are still
+            // visible in the POS at redemption time — the ROI framing on the
+            // dashboard is what's BI, not the raw count.
+
             if (days < 1) days = 1;
             if (days > 365) days = 365;
 
@@ -490,6 +514,9 @@ namespace CRM_Morcaffein.api.Controllers
         {
             if (!CallerIsAdmin())
                 return StatusCode(403, new { message = "Only admins can view customer LTV reports." });
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
 
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -548,11 +575,15 @@ namespace CRM_Morcaffein.api.Controllers
 
         [HttpGet("audit-summary")]
         public async Task<ActionResult<AuditLogSummaryDto>> GetAuditSummary(
-            int companyId,
-            [FromQuery] int days = 30)
+    int companyId,
+    [FromQuery] int days = 30)
         {
             if (!CallerIsAdmin())
                 return StatusCode(403, new { message = "Only admins can view audit summary reports." });
+
+            // NOT BI-gated: the Basic-tier Admin dashboard's "Employees" KPI
+            // pod reads ActiveEmployeeCount from this endpoint. Splitting the
+            // endpoint for that single field isn't worth the extra DTO.
 
             if (days < 1) days = 1;
             if (days > 365) days = 365;
@@ -658,6 +689,9 @@ namespace CRM_Morcaffein.api.Controllers
         {
             if (days < 7) days = 7;
             if (days > 730) days = 730;
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
 
             // Compute the window in shop-local time so bucket boundaries land on
             // local midnight, not 8am-local (which is what a midnight-UTC boundary
@@ -774,6 +808,9 @@ namespace CRM_Morcaffein.api.Controllers
         {
             if (months < 1) months = 1;
             if (months > 24) months = 24;
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
 
             var todayLocal = (DateTime.UtcNow + PhilippinesUtcOffset).Date;
             var firstMonthStartLocal = new DateTime(todayLocal.Year, todayLocal.Month, 1, 0, 0, 0, DateTimeKind.Unspecified)
@@ -897,6 +934,9 @@ namespace CRM_Morcaffein.api.Controllers
 
             branchId = await ResolveEffectiveBranchIdAsync(companyId, branchId);
 
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
+
             var startDate = DateTime.UtcNow.Date.AddDays(-days + 1);
 
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
@@ -969,7 +1009,12 @@ namespace CRM_Morcaffein.api.Controllers
         [HttpGet("visit-frequency")]
         public async Task<ActionResult<VisitFrequencyDto>> GetVisitFrequency(int companyId)
         {
+
+            if (!await TenantHasModuleAsync(companyId, "BusinessIntelligence"))
+                return StatusCode(403, new { message = "This tenant's plan does not include business intelligence features." });
+
             await using var tenant = await _tenantFactory.CreateAsync(companyId);
+
 
             // Group completed orders by customer, count per customer.
             var counts = await tenant.Orders
@@ -1218,6 +1263,24 @@ namespace CRM_Morcaffein.api.Controllers
             return branchId.HasValue
                 ? query.Where(o => o.BranchId == branchId.Value)
                 : query;
+        }
+
+        /// <summary>
+        /// Returns true if the tenant's current plan includes the given module.
+        /// Used to reject API calls for features the tenant hasn't subscribed
+        /// to — same enforcement pattern as the branch gate. The client hides
+        /// the surfaces; the server refuses crafted requests.
+        /// </summary>
+        private async Task<bool> TenantHasModuleAsync(int companyId, string moduleKey)
+        {
+            var company = await _master.Companies
+                .AsNoTracking()
+                .Include(c => c.CurrentPlan)
+                .FirstOrDefaultAsync(c => c.CompanyId == companyId);
+
+            return company?.CurrentPlan?.ModulesCsv
+                ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Contains(moduleKey, StringComparer.OrdinalIgnoreCase) == true;
         }
     }
 }
